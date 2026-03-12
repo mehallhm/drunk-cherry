@@ -227,3 +227,6 @@ __marimo__/
 
 # RStudio files
 .Rproj.user/
+
+### Trail data
+*.csv
