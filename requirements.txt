@@ -1,4 +1,6 @@
 numpy
 pandas
 matplotlib
-scipy
+scikit-learn
+keras
+tensorflow

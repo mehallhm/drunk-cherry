@@ -1,7 +1,11 @@
 [project]
+authors = [
+    {name = "Michael Mehall", email = "mehall.m@northeastern.edu"},
+    {name = "Paolo Lanaro", email = "lanaro.p@northeastern.edu"},
+]
 name = "drunk-cherry"
 version = "0.1.0"
-description = "Add your description here"
+description = "DS4420 Final Project - Michael Mehall & Paolo Lanaro"
 readme = "README.md"
 requires-python = ">=3.12"
 dependencies = []
