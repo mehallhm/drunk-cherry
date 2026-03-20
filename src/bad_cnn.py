@@ -1,19 +1,24 @@
 import numpy as np
-import pandas as pd
+
+# import pandas as pd
 import argparse
 from pathlib import Path
-import matplotlib.pyplot as plt
+# import matplotlib.pyplot as plt
 
 import keras
 from keras.models import Model
 from keras.layers import Dense, Input, Conv2D, MaxPooling2D, Flatten, Dropout
-from keras.optimizers import Adam
-from keras.losses import binary_crossentropy
+
+# from keras.optimizers import Adam
+# from keras.losses import binary_crossentropy
 from keras.callbacks import EarlyStopping
 import tensorflow as tf
 from sklearn.model_selection import train_test_split
+from sklearn.preprocessing import LabelEncoder
 
-seed = 42
+from PIL import Image
+
+seed = 1337
 np.random.seed(seed)
 tf.random.set_seed(seed)
 keras.utils.set_random_seed(seed)
@@ -21,12 +26,12 @@ keras.utils.set_random_seed(seed)
 IMG_SIZE = 512
 
 
-# ripped this architecture from my homework 2. Will have to tweak this
-def create_model():
-    inpx = Input(shape=(IMG_SIZE, IMG_SIZE, 1))
+# multi class classification
+def create_model(img_size: tuple[int, int], num_classes: int) -> Model:
+    height, width = img_size
+    inpx = Input(shape=(height, width, 1))
 
     x = Conv2D(1, (3, 3), padding="same", activation="tanh")(inpx)
-
     x = MaxPooling2D((2, 2))(x)
 
     x = Conv2D(2, (3, 3), padding="valid", activation="relu")(x)
@@ -51,7 +56,7 @@ def create_model():
     x = Dense(64, activation="relu")(x)
     x = Dropout(0.5)(x)
 
-    out_layer = Dense(1, activation="sigmoid")(x)
+    out_layer = Dense(num_classes, activation="softmax")(x)
 
     model = Model([inpx], out_layer)
     model.compile(
@@ -60,30 +65,83 @@ def create_model():
     return model
 
 
-# do the training...
-def train_test_model(model, data, epochs=20):
-    xTrain, yTrain, xTest, yTest = data
+def parse_difficulty(stem: str) -> str:
+    parts = stem.split("_")
+    if len(parts) < 3:
+        raise ValueError(f"Unexpected filename format {stem}")
+    return "_".join(parts[2:])
 
-    model.fit(xTrain, yTrain, epochs=epochs, validation_data=(xTest, yTest))
-    score = model.evaluate(xTest, yTest, verbose=0)
-    print("loss = ", score[0])
+
+def train_test_model(
+    model: Model,
+    data: tuple,
+    epochs: int = 20,
+    output_path: Path = Path("trail_cnn_model.keras"),
+) -> None:
+    xTrain, xTest, yTrain, yTest = data
+
+    early_stop = EarlyStopping(
+        monitor="val_loss", patience=10, restore_best_weights=True
+    )
+
+    model.fit(
+        xTrain,
+        yTrain,
+        epochs=epochs,
+        validation_data=(xTest, yTest),
+        callbacks=[early_stop],
+    )
+
+    score = model.evaluate(xTest, yTest)
+    print("\nloss = ", score[0])
     print("accuracy = ", score[1])
-    pass
+
+    model.save(output_path)
+    print(f"Model saved to {output_path}")
 
 
-def import_data(path: Path) -> np.ndarray:
-    for f in path.iterdir():
-        if f.is_file(follow_symlinks=False) and f.suffix == ".png":
-            # TODO: import the image, parse the file name for difficulty and trail id
-            pass
+# world's most sloppily written function but it's alright...
+def import_data(path: Path) -> tuple:
+    png_files = [
+        f for f in path.iterdir() if f.is_file() and f.suffix.lower() == ".png"
+    ]
+    if not png_files:
+        raise FileNotFoundError(f"No PNG images found at {path}")
 
-    # TODO: train test split the data we've read
-    # xTrain, xTest, yTrain, yTest = train_test_split(
-    #     data, y_categories, test_size=0.25, random_state=seed
-    # )
-    # xTrain /= 255.0
-    # xTest /= 255.0
-    return np.array(())
+    with Image.open(png_files[0]) as img:
+        img_width, img_height = img.size
+    img_size = (img_height, img_width)
+    print(f"Image sizes are {img_height} by {img_width}")
+
+    # X
+    images = []
+    # y
+    labels = []
+
+    for f in png_files:
+        difficulty = parse_difficulty(f.stem)
+
+        with Image.open(f) as img:
+            arr = np.array(img.convert("L"), dtype=np.float32)
+
+        images.append(arr)
+        labels.append(difficulty)
+
+    X = np.stack(images, axis=0)[..., np.newaxis]
+
+    le = LabelEncoder()
+    y_int = le.fit_transform(labels)
+    num_classes = len(le.classes_)
+
+    y_onehot = keras.utils.to_categorical(y_int, num_classes=num_classes)
+
+    xTrain, xTest, yTrain, yTest = train_test_split(
+        X, y_onehot, test_size=0.25, random_state=seed, stratify=y_int
+    )
+
+    xTrain = xTrain / 255.0
+    xTest = xTest / 255.0
+    return (xTrain, xTest, yTrain, yTest, le, img_size)
 
 
 def build_parser() -> argparse.ArgumentParser:
@@ -107,24 +165,35 @@ def build_parser() -> argparse.ArgumentParser:
         help="Number of epochs to train the CNN over",
     )
 
+    parser.add_argument(
+        "--output",
+        type=Path,
+        default=Path("trail_cnn_model.keras"),
+        metavar="MODEL_PATH",
+        help="Where to save trained model",
+    )
+
     return parser
 
 
 def main():
     parser = build_parser()
-
     args = parser.parse_args()
+
     path: Path = args.input
-    epochs = args.epochs
+    epochs: int = args.epochs
+    output: Path = args.output
 
     if not path.is_dir():
         parser.error(f"Input directory {path} is not a valid directory")
 
-    # (xTrain, yTrain, xTest, yTest)
-    data = import_data(path)
+    xTrain, xTest, yTrain, yTest, label_encoder, img_size = import_data(path)
+    num_classes = len(label_encoder.classes_)
 
-    model = create_model()
-    train_test_model(model, data, epochs)
+    model = create_model(img_size, num_classes)
+    model.summary()
+
+    train_test_model(model, (xTrain, xTest, yTrain, yTest), epochs, output)
 
     print("done")
 
