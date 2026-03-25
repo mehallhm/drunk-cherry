@@ -23,15 +23,12 @@ np.random.seed(seed)
 tf.random.set_seed(seed)
 keras.utils.set_random_seed(seed)
 
-IMG_SIZE = 512
-
-
 # multi class classification
 def create_model(img_size: tuple[int, int], num_classes: int) -> Model:
     height, width = img_size
     inpx = Input(shape=(height, width, 1))
 
-    x = Conv2D(1, (3, 3), padding="same", activation="tanh")(inpx)
+    x = Conv2D(1, (3, 3), padding="same", activation="relu")(inpx)
     x = MaxPooling2D((2, 2))(x)
 
     x = Conv2D(2, (3, 3), padding="valid", activation="relu")(x)
@@ -75,7 +72,7 @@ def parse_difficulty(stem: str) -> str:
 def train_test_model(
     model: Model,
     data: tuple,
-    epochs: int = 20,
+    epochs: int,
     output_path: Path = Path("trail_cnn_model.keras"),
 ) -> None:
     xTrain, xTest, yTrain, yTest = data
@@ -118,6 +115,8 @@ def import_data(path: Path) -> tuple:
     # y
     labels = []
 
+    label_counts = {}
+
     for f in png_files:
         difficulty = parse_difficulty(f.stem)
 
@@ -126,12 +125,17 @@ def import_data(path: Path) -> tuple:
 
         images.append(arr)
         labels.append(difficulty)
+        label_counts[difficulty] = label_counts.get(difficulty, 0) + 1
 
     X = np.stack(images, axis=0)[..., np.newaxis]
 
     le = LabelEncoder()
     y_int = le.fit_transform(labels)
     num_classes = len(le.classes_)
+
+    print(f"{num_classes} classes with following distributions:")
+    for label, count in label_counts.items():
+        print(f"{label}: {count/len(images)}")
 
     y_onehot = keras.utils.to_categorical(y_int, num_classes=num_classes)
 
