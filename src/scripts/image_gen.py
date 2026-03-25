@@ -10,9 +10,9 @@ import numpy as np
 import pandas as pd
 from PIL import Image
 
-IMG_SIZE = 512  # output image width adn height in pixels
+IMG_SIZE = 256  # output image width adn height in pixels
 PADDING_PX = 24  # blank border padding around the trail
-LINE_WIDTH = 2  # pixel thickness (radius) of the trail line
+LINE_WIDTH = 4  # pixel thickness (radius) of the trail line
 DOT_RADIUS = 3  # radius of GPS point dots drawn on top of lines
 
 elevation_to_RGB_mapping = [
@@ -237,6 +237,9 @@ def process_all_trails(
                 failed_images.add(item[0])
             elif i % 500 == 0 or i == total:
                 print(f"  {i}/{total} done -- last completed image: {result}")
+            if i == 2000:
+                print(" === Early finishing after 200 images ===")
+                break
     else:
         done = 0
         with ThreadPoolExecutor(max_workers=num_threads) as executor:
