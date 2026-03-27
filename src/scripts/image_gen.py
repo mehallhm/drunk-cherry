@@ -23,6 +23,15 @@ elevation_to_RGB_mapping = [
     (1.00, np.array([220, 0, 0], dtype=float)),
 ]
 
+known_diffs = {
+    "Easy",
+    "Easy/Intermediate",
+    "Intermediate",
+    "Difficult",
+    "Intermediate/Difficult",
+    "Very Difficult",
+}
+
 
 # maps normalized elevation value to an RGB color
 def elevation_to_color(norm_value: float) -> tuple:
@@ -313,6 +322,17 @@ def build_parser() -> argparse.ArgumentParser:
     return parser
 
 
+def filter_bad_difficulties(df: pd.DataFrame) -> tuple[pd.DataFrame, set]:
+    bad_ids = {
+        trail_id
+        for trail_id, group in df.groupby("trail_id")
+        if bool(group["difficulty"].isnull().any())
+        or not bool(group["difficulty"].dropna().map(lambda d: d in known_diffs).all())
+    }
+
+    return df[~df["trail_id"].isin(list(bad_ids))], bad_ids
+
+
 def main() -> None:
     parser = build_parser()
     args = parser.parse_args()
@@ -327,6 +347,9 @@ def main() -> None:
     df = pd.read_csv(csv_path, index_col=0)
     print("Succesfully read CSV")
     print(f"Loaded {len(df):,} rows, {df['trail_id'].nunique():,} unique trails.")
+
+    df, bad_diff_ids = filter_bad_difficulties(df)
+    print(f"bad_diff_ids: {bad_diff_ids}")
 
     # computes global elevation bounds.
     # trails that don't climb much stay blue but trains that climb a lot of elevatoin go from blue to red

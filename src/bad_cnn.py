@@ -17,11 +17,54 @@ from sklearn.model_selection import train_test_split
 from sklearn.preprocessing import LabelEncoder
 
 from PIL import Image
+import matplotlib.pyplot as plt
+
+import utils
 
 seed = 1337
 np.random.seed(seed)
 tf.random.set_seed(seed)
 keras.utils.set_random_seed(seed)
+
+
+def save_feature_map(arr: np.ndarray, path: Path, cmap: str = "viridis") -> None:
+    a_min, a_max = arr.min(), arr.max()
+    norm = (arr - a_min) / (a_max - a_min) if a_max - a_min > 0 else np.zeros_like(arr)
+    fig, ax = plt.subplots(figsize=(2, 2))
+    ax.imshow(norm, cmap=cmap, interpolation="nearest")
+    ax.axis("off")
+    fig.savefig(path, bbox_inches="tight", pad_inches=0.05, dpi=100)
+    plt.close(fig)
+
+
+def create_kernel_images(
+    model: Model, xTest: np.ndarray, output_dir: Path = Path("./visuals/kernel_plots/")
+):
+    output_dir = Path(output_dir)
+    output_dir.mkdir(parents=True, exist_ok=True)
+
+    rng = np.random.default_rng(seed)
+    sample_idx = int(rng.integers(0, len(xTest)))
+    sample = xTest[sample_idx]
+    sample_input = sample[np.newaxis]
+
+    save_feature_map(sample[..., 0], output_dir / "raw_sample.png", cmap="gray")
+
+    for layer in model.layers:
+        if not isinstance(layer, Conv2D):
+            continue
+
+        num_filters = layer.get_weights()[0].shape[-1]
+        activation_model = Model(inputs=model.input, outputs=layer.output)
+        activations = activation_model.predict(sample_input)
+
+        for filter_idx in range(num_filters):
+            act_map = activations[0, :, :, filter_idx]
+            save_feature_map(
+                act_map,
+                output_dir / f"{layer.name}_filter_{filter_idx}_activation.png",
+            )
+
 
 # multi class classification
 def create_model(img_size: tuple[int, int], num_classes: int) -> Model:
@@ -40,18 +83,21 @@ def create_model(img_size: tuple[int, int], num_classes: int) -> Model:
     x = Conv2D(8, (3, 3), padding="valid", activation="relu")(x)
     x = MaxPooling2D((2, 2))(x)
 
-    x = Conv2D(16, (3, 3), padding="valid", activation="relu")(x)
-    x = MaxPooling2D((2, 2))(x)
+    # x = Conv2D(16, (3, 3), padding="valid", activation="relu")(x)
+    # x = MaxPooling2D((2, 2))(x)
 
-    x = Conv2D(32, (3, 3), padding="valid", activation="relu")(x)
-    x = MaxPooling2D((3, 3))(x)
+    # x = Conv2D(32, (3, 3), padding="valid", activation="relu")(x)
+    # x = MaxPooling2D((3, 3))(x)
 
     x = Flatten()(x)
-    x = Dense(128, activation="relu")(x)
-    x = Dropout(0.5)(x)
+    x = Dense(128, activation="leaky_relu")(x)
+    x = Dropout(0.7)(x)
 
-    x = Dense(64, activation="relu")(x)
-    x = Dropout(0.5)(x)
+    x = Dense(64, activation="leaky_relu")(x)
+    x = Dropout(0.7)(x)
+
+    x = Dense(32, activation="leaky_relu")(x)
+    x = Dropout(0.7)(x)
 
     out_layer = Dense(num_classes, activation="softmax")(x)
 
@@ -60,13 +106,6 @@ def create_model(img_size: tuple[int, int], num_classes: int) -> Model:
         loss="categorical_crossentropy", optimizer="adam", metrics=["accuracy"]
     )
     return model
-
-
-def parse_difficulty(stem: str) -> str:
-    parts = stem.split("_")
-    if len(parts) < 3:
-        raise ValueError(f"Unexpected filename format {stem}")
-    return "_".join(parts[2:])
 
 
 def train_test_model(
@@ -95,57 +134,6 @@ def train_test_model(
 
     model.save(output_path)
     print(f"Model saved to {output_path}")
-
-
-# world's most sloppily written function but it's alright...
-def import_data(path: Path) -> tuple:
-    png_files = [
-        f for f in path.iterdir() if f.is_file() and f.suffix.lower() == ".png"
-    ]
-    if not png_files:
-        raise FileNotFoundError(f"No PNG images found at {path}")
-
-    with Image.open(png_files[0]) as img:
-        img_width, img_height = img.size
-    img_size = (img_height, img_width)
-    print(f"Image sizes are {img_height} by {img_width}")
-
-    # X
-    images = []
-    # y
-    labels = []
-
-    label_counts = {}
-
-    for f in png_files:
-        difficulty = parse_difficulty(f.stem)
-
-        with Image.open(f) as img:
-            arr = np.array(img.convert("L"), dtype=np.float32)
-
-        images.append(arr)
-        labels.append(difficulty)
-        label_counts[difficulty] = label_counts.get(difficulty, 0) + 1
-
-    X = np.stack(images, axis=0)[..., np.newaxis]
-
-    le = LabelEncoder()
-    y_int = le.fit_transform(labels)
-    num_classes = len(le.classes_)
-
-    print(f"{num_classes} classes with following distributions:")
-    for label, count in label_counts.items():
-        print(f"{label}: {count/len(images)}")
-
-    y_onehot = keras.utils.to_categorical(y_int, num_classes=num_classes)
-
-    xTrain, xTest, yTrain, yTest = train_test_split(
-        X, y_onehot, test_size=0.25, random_state=seed, stratify=y_int
-    )
-
-    xTrain = xTrain / 255.0
-    xTest = xTest / 255.0
-    return (xTrain, xTest, yTrain, yTest, le, img_size)
 
 
 def build_parser() -> argparse.ArgumentParser:
@@ -177,6 +165,15 @@ def build_parser() -> argparse.ArgumentParser:
         help="Where to save trained model",
     )
 
+    parser.add_argument(
+        "--balance",
+        type=str,
+        choices=["undersample", "none"],
+        default="none",
+        metavar="BALANCE",
+        help="Undersampling: Clip all classes to the smallest",
+    )
+
     return parser
 
 
@@ -187,17 +184,24 @@ def main():
     path: Path = args.input
     epochs: int = args.epochs
     output: Path = args.output
+    balance = args.balance
 
     if not path.is_dir():
         parser.error(f"Input directory {path} is not a valid directory")
 
-    xTrain, xTest, yTrain, yTest, label_encoder, img_size = import_data(path)
+    print(utils.get_dataset_info(path))
+
+    xTrain, xTest, yTrain, yTest, label_encoder, img_size = utils.import_data(
+        path, balance=balance
+    )
     num_classes = len(label_encoder.classes_)
 
     model = create_model(img_size, num_classes)
     model.summary()
 
     train_test_model(model, (xTrain, xTest, yTrain, yTest), epochs, output)
+
+    create_kernel_images(model, xTest)
 
     print("done")
 
