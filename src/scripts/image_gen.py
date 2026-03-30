@@ -318,6 +318,14 @@ def build_parser() -> argparse.ArgumentParser:
             "Number of threads for --all mode (default: 1). Pass 0 to use all but one available CPU cores."
         ),
     )
+    parser.add_argument(
+        "--global_elevation",
+        type=bool,
+        default=False,
+        help=(
+            "Whether to globally min max scale the elevation heatmaps. Default is using per-image elevation scales for heatmaps"
+        ),
+    )
 
     return parser
 
@@ -353,6 +361,7 @@ def main() -> None:
 
     # computes global elevation bounds.
     # trails that don't climb much stay blue but trains that climb a lot of elevatoin go from blue to red
+    # TODO: fix these functions. have options for global or local heatmapping
     global_elev_min = float(min(df["elevation"].values))
     global_elev_max = float(max(df["elevation"].values))
     print(f"Global elevation range: {global_elev_min:.1f} m -> {global_elev_max:.1f} m")

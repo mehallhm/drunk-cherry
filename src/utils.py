@@ -104,6 +104,8 @@ def import_data(
         png_files = list(png_files)  # already a list; make a copy
 
     # X
+    # TODO: make sure to extract the max grade, elevation gain, and elevation loss from the dataset here too.
+    # We'll need it for the model fitting now since we want to add some features after CNN flatten opration
     images = []
     # y
     labels = []

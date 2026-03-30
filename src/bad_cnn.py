@@ -7,7 +7,7 @@ from pathlib import Path
 
 import keras
 from keras.models import Model
-from keras.layers import Dense, Input, Conv2D, MaxPooling2D, Flatten, Dropout
+from keras.layers import Dense, Input, Conv2D, MaxPooling2D, Flatten, Dropout, LeakyReLU, Concatenate
 
 # from keras.optimizers import Adam
 # from keras.losses import binary_crossentropy
@@ -69,9 +69,11 @@ def create_kernel_images(
 # multi class classification
 def create_model(img_size: tuple[int, int], num_classes: int) -> Model:
     height, width = img_size
-    inpx = Input(shape=(height, width, 1))
+    input_image = Input(shape=(height, width, 1))
+    # add max grade, elevation gain, and elevation loss
+    extra_features = Input(shape=(3,))
 
-    x = Conv2D(1, (3, 3), padding="same", activation="relu")(inpx)
+    x = Conv2D(1, (3, 3), padding="same", activation="relu")(input_image)
     x = MaxPooling2D((2, 2))(x)
 
     x = Conv2D(2, (3, 3), padding="valid", activation="relu")(x)
@@ -89,19 +91,24 @@ def create_model(img_size: tuple[int, int], num_classes: int) -> Model:
     # x = Conv2D(32, (3, 3), padding="valid", activation="relu")(x)
     # x = MaxPooling2D((3, 3))(x)
 
-    x = Flatten()(x)
-    x = Dense(128, activation="leaky_relu")(x)
+    post_convolution = Flatten()(x)
+    x = Concatenate()([post_convolution, extra_features])
+
+    x = Dense(128)(x)
+    x = LeakyReLU(alpha=0.1)(x)
     x = Dropout(0.7)(x)
 
-    x = Dense(64, activation="leaky_relu")(x)
+    x = Dense(64)(x)
+    x = LeakyReLU(alpha=0.1)(x)
     x = Dropout(0.7)(x)
 
-    x = Dense(32, activation="leaky_relu")(x)
+    x = Dense(32)(x)
+    x = LeakyReLU(alpha=0.1)(x)
     x = Dropout(0.7)(x)
 
     out_layer = Dense(num_classes, activation="softmax")(x)
 
-    model = Model([inpx], out_layer)
+    model = Model(inputs=[input_image, extra_features], outputs=out_layer)
     model.compile(
         loss="categorical_crossentropy", optimizer="adam", metrics=["accuracy"]
     )
@@ -121,14 +128,14 @@ def train_test_model(
     )
 
     model.fit(
-        xTrain,
+        [xTrain, ],
         yTrain,
         epochs=epochs,
         validation_data=(xTest, yTest),
         callbacks=[early_stop],
     )
 
-    score = model.evaluate(xTest, yTest)
+    score = model.evaluate([xTest, ], yTest)
     print("\nloss = ", score[0])
     print("accuracy = ", score[1])
 
