@@ -1,12 +1,15 @@
 from pathlib import Path
 
 import numpy as np
+import pandas as pd
 import keras
 from sklearn.model_selection import train_test_split
 from sklearn.preprocessing import LabelEncoder
 from PIL import Image
 
 seed = 1337
+
+extra_feature_set = {"elevation_gain", "elevation_loss", "average_grade", "max_grade"}
 
 difficulty_mapping = {
     "Easy": "Easy",
@@ -22,7 +25,7 @@ def parse_stem(stem: str) -> tuple[str, str]:
     parts = stem.split("_")
     if len(parts) < 3:
         raise ValueError(f"Unexpected filename format {stem}")
-    trail_id = parts[0]
+    trail_id = parts[1]
     difficulty = "_".join(parts[2:])
     return trail_id, difficulty
 
@@ -76,6 +79,7 @@ def combine_difficulties(difficulty: str) -> str:
 
 def import_data(
     path: Path,
+    csv_path: Path,
     balance: str = "none",
     test_size: float = 0.25,
 ) -> tuple:
@@ -84,6 +88,19 @@ def import_data(
     with Image.open(png_files[0]) as img:
         img_width, img_height = img.size
     img_size = (img_height, img_width)
+
+    trail_df = pd.read_csv(csv_path, index_col=0)
+    missing_cols = [c for c in extra_feature_set if c not in trail_df.columns]
+    if missing_cols:
+        raise ValueError(f"CSV missing {missing_cols} columns")
+
+    # dictionary from trail_id to an np.array of that trails "extra features"
+    trail_to_feature_map = {
+        str(row["trail_id"]): np.array(
+            [row[c] for c in extra_feature_set], dtype=np.float32
+        )
+        for _, row in trail_df.drop_duplicates(subset="trail_id").iterrows()
+    }
 
     images_by_class = {}
     for f in png_files:
@@ -98,26 +115,33 @@ def import_data(
             chosen = rng.choice(files, size=min_count, replace=False)  # type: ignore[arg-type]
             selected.extend(chosen.tolist())
         png_files = selected
-
         print(f"min_count: {min_count}")
     else:
         png_files = list(png_files)  # already a list; make a copy
 
     # X
-    # TODO: make sure to extract the max grade, elevation gain, and elevation loss from the dataset here too.
-    # We'll need it for the model fitting now since we want to add some features after CNN flatten opration
     images = []
     # y
     labels = []
+    # i know we could just return the trail_to_feature_map and index from that dictoinary, but just for consistency:
+    features = []
 
     for f in png_files:
+        trail_id = parse_trail_id(f.stem)
         difficulty = combine_difficulties(parse_difficulty(f.stem))
-        with Image.open(f) as img:
-            arr = np.array(img.convert("L"), dtype=np.float32)
+        try:
+            with Image.open(f) as img:
+                arr = np.array(img.convert("L"), dtype=np.float32)
+        except OSError:
+            print(f"It seems image gen file had a problem processing trail {trail_id}")
+            continue
+
         images.append(arr)
         labels.append(difficulty)
+        features.append(trail_to_feature_map[trail_id])
 
     X = np.stack(images, axis=0)[..., np.newaxis]  # (N, H, W, 1)
+    F = np.stack(features, axis=0)
 
     le = LabelEncoder()
     y_int = le.fit_transform(labels)
@@ -130,14 +154,21 @@ def import_data(
     for idx, cnt in zip(unique, counts):
         print(f"  {le.classes_[idx]}: {cnt / len(labels):.1%}  ({cnt} images)")
 
-    xTrain, xTest, yTrain, yTest = train_test_split(
-        X, y_onehot, test_size=test_size, random_state=seed, stratify=y_int
+    xTrain, xTest, yTrain, yTest, fTrain, fTest = train_test_split(
+        X, y_onehot, F, test_size=test_size, random_state=seed, stratify=y_int
     )
 
     xTrain = xTrain / 255.0
     xTest = xTest / 255.0
 
-    return (xTrain, xTest, yTrain, yTest, le, img_size)
+    # since we'll be using the extra features after convolutions, we have to normalize between [0, 1]
+    f_min = fTrain.min(axis=0)
+    f_max = fTrain.max(axis=0)
+    f_range = np.where(f_max - f_min > 1e-9, f_max - f_min, 1.0)
+    fTrain = (fTrain - f_min) / f_range
+    fTest = (fTest - f_min) / f_range
+
+    return (xTrain, xTest, yTrain, yTest, fTrain, fTest, le, img_size)
 
 
 def collect_pngs(path: Path) -> list[Path]:

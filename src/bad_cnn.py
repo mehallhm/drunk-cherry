@@ -7,7 +7,16 @@ from pathlib import Path
 
 import keras
 from keras.models import Model
-from keras.layers import Dense, Input, Conv2D, MaxPooling2D, Flatten, Dropout, LeakyReLU, Concatenate
+from keras.layers import (
+    Dense,
+    Input,
+    Conv2D,
+    MaxPooling2D,
+    Flatten,
+    Dropout,
+    LeakyReLU,
+    Concatenate,
+)
 
 # from keras.optimizers import Adam
 # from keras.losses import binary_crossentropy
@@ -38,17 +47,20 @@ def save_feature_map(arr: np.ndarray, path: Path, cmap: str = "viridis") -> None
 
 
 def create_kernel_images(
-    model: Model, xTest: np.ndarray, output_dir: Path = Path("./visuals/kernel_plots/")
+    model: Model, inputs: tuple, output_dir: Path = Path("./visuals/kernel_plots/")
 ):
+    xTest, fTest = inputs
     output_dir = Path(output_dir)
     output_dir.mkdir(parents=True, exist_ok=True)
 
     rng = np.random.default_rng(seed)
     sample_idx = int(rng.integers(0, len(xTest)))
-    sample = xTest[sample_idx]
-    sample_input = sample[np.newaxis]
+    x_sample = xTest[sample_idx]
+    f_sample = fTest[sample_idx]
+    sample_input_x = x_sample[np.newaxis]
+    sample_input_f = f_sample[np.newaxis]
 
-    save_feature_map(sample[..., 0], output_dir / "raw_sample.png", cmap="gray")
+    save_feature_map(x_sample[..., 0], output_dir / "raw_sample.png", cmap="gray")
 
     for layer in model.layers:
         if not isinstance(layer, Conv2D):
@@ -56,7 +68,7 @@ def create_kernel_images(
 
         num_filters = layer.get_weights()[0].shape[-1]
         activation_model = Model(inputs=model.input, outputs=layer.output)
-        activations = activation_model.predict(sample_input)
+        activations = activation_model.predict((sample_input_x, sample_input_f))
 
         for filter_idx in range(num_filters):
             act_map = activations[0, :, :, filter_idx]
@@ -70,20 +82,21 @@ def create_kernel_images(
 def create_model(img_size: tuple[int, int], num_classes: int) -> Model:
     height, width = img_size
     input_image = Input(shape=(height, width, 1))
-    # add max grade, elevation gain, and elevation loss
-    extra_features = Input(shape=(3,))
+    # TODO: fix hardcoded values
+    # adds some extra features after the convolution layers
+    extra_features = Input(shape=(4,))
 
-    x = Conv2D(1, (3, 3), padding="same", activation="relu")(input_image)
-    x = MaxPooling2D((2, 2))(x)
-
-    x = Conv2D(2, (3, 3), padding="valid", activation="relu")(x)
-    x = MaxPooling2D((2, 2))(x)
-
-    x = Conv2D(4, (3, 3), padding="valid", activation="relu")(x)
-    x = MaxPooling2D((2, 2))(x)
-
-    x = Conv2D(8, (3, 3), padding="valid", activation="relu")(x)
-    x = MaxPooling2D((2, 2))(x)
+    # x = Conv2D(1, (3, 3), padding="same", activation="relu")(input_image)
+    # x = MaxPooling2D((2, 2))(x)
+    #
+    # x = Conv2D(2, (3, 3), padding="valid", activation="relu")(x)
+    # x = MaxPooling2D((2, 2))(x)
+    #
+    # x = Conv2D(4, (3, 3), padding="valid", activation="relu")(x)
+    # x = MaxPooling2D((2, 2))(x)
+    #
+    # x = Conv2D(8, (3, 3), padding="valid", activation="relu")(x)
+    # x = MaxPooling2D((2, 2))(x)
 
     # x = Conv2D(16, (3, 3), padding="valid", activation="relu")(x)
     # x = MaxPooling2D((2, 2))(x)
@@ -91,7 +104,7 @@ def create_model(img_size: tuple[int, int], num_classes: int) -> Model:
     # x = Conv2D(32, (3, 3), padding="valid", activation="relu")(x)
     # x = MaxPooling2D((3, 3))(x)
 
-    post_convolution = Flatten()(x)
+    post_convolution = Flatten()(input_image)
     x = Concatenate()([post_convolution, extra_features])
 
     x = Dense(128)(x)
@@ -121,21 +134,24 @@ def train_test_model(
     epochs: int,
     output_path: Path = Path("trail_cnn_model.keras"),
 ) -> None:
-    xTrain, xTest, yTrain, yTest = data
+    xTrain, xTest, fTrain, fTest, yTrain, yTest = data
 
     early_stop = EarlyStopping(
         monitor="val_loss", patience=10, restore_best_weights=True
     )
 
     model.fit(
-        [xTrain, ],
+        [xTrain, fTrain],
         yTrain,
         epochs=epochs,
-        validation_data=(xTest, yTest),
+        validation_data=((xTest, fTest), yTest),
         callbacks=[early_stop],
     )
 
-    score = model.evaluate([xTest, ], yTest)
+    score = model.evaluate(
+        [xTest, fTest],
+        yTest,
+    )
     print("\nloss = ", score[0])
     print("accuracy = ", score[1])
 
@@ -196,19 +212,22 @@ def main():
     if not path.is_dir():
         parser.error(f"Input directory {path} is not a valid directory")
 
-    print(utils.get_dataset_info(path))
+    # print(utils.get_dataset_info(path))
 
-    xTrain, xTest, yTrain, yTest, label_encoder, img_size = utils.import_data(
-        path, balance=balance
+    # NOTE: I know it's a very not good idea to have the hardcoded csv. This is for testing
+    xTrain, xTest, yTrain, yTest, fTrain, fTest, label_encoder, img_size = (
+        utils.import_data(path, Path("../all_trails.csv"), balance=balance)
     )
     num_classes = len(label_encoder.classes_)
 
     model = create_model(img_size, num_classes)
     model.summary()
 
-    train_test_model(model, (xTrain, xTest, yTrain, yTest), epochs, output)
+    train_test_model(
+        model, (xTrain, xTest, fTrain, fTest, yTrain, yTest), epochs, output
+    )
 
-    create_kernel_images(model, xTest)
+    create_kernel_images(model, (xTest, fTest))
 
     print("done")
 

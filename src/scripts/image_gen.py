@@ -129,6 +129,7 @@ def generate_trail_image(
     output_dir: Path,
     global_elev_min: float,
     global_elev_max: float,
+    use_global_elevation: bool,
 ) -> Path:
     latitudes = trail_df["latitude"].values.astype(float)
     longitudes = trail_df["longitude"].values.astype(float)
@@ -148,10 +149,16 @@ def generate_trail_image(
         )
         return px, py
 
-    global_elevation_range = global_elev_max - global_elev_min
+    if use_global_elevation:
+        elevation_min, elevation_max = global_elev_min, global_elev_max
+    else:
+        elevation_min = float(elevs.min())
+        elevation_max = float(elevs.max())
+
+    elevation_range = max(elevation_max - elevation_min, 1e-9)
 
     def normalize_elevation(elevation):
-        return (elevation - global_elev_min) / global_elevation_range
+        return (elevation - elevation_min) / elevation_range
 
     # create image canvas
     pixels = np.zeros((IMG_SIZE, IMG_SIZE, 3), dtype=np.uint8)
@@ -173,6 +180,7 @@ def generate_trail_image(
     for (px, py), color in zip(coords, colors):
         draw_dot(pixels, px, py, DOT_RADIUS, color)
 
+    # TODO: Make it so that the start and end colors of the trail are the same as the elevation, but different shapes
     start_color = (255, 255, 255)
     end_color = (255, 0, 255)
 
@@ -199,22 +207,40 @@ def process_single_trail(
     output_dir: Path,
     global_elev_min: float,
     global_elev_max: float,
+    use_global_elevation: bool,
 ) -> None:
     subset = df[df["trail_id"] == trail_id]
     if subset.empty:
         print(f"[ERROR] trail_id {trail_id} not found in the dataset.")
         sys.exit(1)
     out = generate_trail_image(
-        subset, trail_id, output_dir, global_elev_min, global_elev_max
+        subset,
+        trail_id,
+        output_dir,
+        global_elev_min,
+        global_elev_max,
+        use_global_elevation,
     )
     print(f"Saved: {out}")
 
 
 def worker(args):
-    trail_id, group_df, output_dir, elevation_min, elevation_max = args
+    (
+        trail_id,
+        group_df,
+        output_dir,
+        elevation_min,
+        elevation_max,
+        use_global_elevation,
+    ) = args
     try:
         out = generate_trail_image(
-            group_df, trail_id, output_dir, elevation_min, elevation_max
+            group_df,
+            trail_id,
+            output_dir,
+            elevation_min,
+            elevation_max,
+            use_global_elevation,
         )
         return trail_id, out
     except Exception as exc:
@@ -227,6 +253,7 @@ def process_all_trails(
     num_threads: int,
     global_elev_min: float,
     global_elev_max: float,
+    use_global_elevation: bool,
 ) -> None:
     groups = list(df.groupby("trail_id"))
     total = len(groups)
@@ -235,7 +262,14 @@ def process_all_trails(
     print(f"Processing {total} trails with {num_threads} thread(s)...")
 
     work_items = [
-        (trail_id, group_df, output_dir, global_elev_min, global_elev_max)
+        (
+            trail_id,
+            group_df,
+            output_dir,
+            global_elev_min,
+            global_elev_max,
+            use_global_elevation,
+        )
         for trail_id, group_df in groups
     ]
 
@@ -246,9 +280,6 @@ def process_all_trails(
                 failed_images.add(item[0])
             elif i % 500 == 0 or i == total:
                 print(f"  {i}/{total} done -- last completed image: {result}")
-            if i == 2000:
-                print(" === Early finishing after 200 images ===")
-                break
     else:
         done = 0
         with ThreadPoolExecutor(max_workers=num_threads) as executor:
@@ -320,7 +351,7 @@ def build_parser() -> argparse.ArgumentParser:
     )
     parser.add_argument(
         "--global_elevation",
-        type=bool,
+        action="store_true",
         default=False,
         help=(
             "Whether to globally min max scale the elevation heatmaps. Default is using per-image elevation scales for heatmaps"
@@ -366,14 +397,29 @@ def main() -> None:
     global_elev_max = float(max(df["elevation"].values))
     print(f"Global elevation range: {global_elev_min:.1f} m -> {global_elev_max:.1f} m")
 
+    use_global_elevation = args.global_elevation
+    print(f"Elevation scaling {'global' if use_global_elevation else 'per-trail'}")
+
     if args.trail_id is not None:
         process_single_trail(
-            df, args.trail_id, output_dir, global_elev_min, global_elev_max
+            df,
+            args.trail_id,
+            output_dir,
+            global_elev_min,
+            global_elev_max,
+            use_global_elevation,
         )
     else:
         # either use specified number of threads, or one minus logical CPU count
         n_threads = args.threads if args.threads > 0 else ((os.cpu_count() or 2) - 1)
-        process_all_trails(df, output_dir, n_threads, global_elev_min, global_elev_max)
+        process_all_trails(
+            df,
+            output_dir,
+            n_threads,
+            global_elev_min,
+            global_elev_max,
+            use_global_elevation,
+        )
 
 
 if __name__ == "__main__":
