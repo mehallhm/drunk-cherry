@@ -49,6 +49,7 @@ def save_feature_map(arr: np.ndarray, path: Path, cmap: str = "viridis") -> None
 def create_kernel_images(
     model: Model, inputs: tuple, output_dir: Path = Path("./visuals/kernel_plots/")
 ):
+    print(f"Creating kernel images")
     xTest, fTest = inputs
     output_dir = Path(output_dir)
     output_dir.mkdir(parents=True, exist_ok=True)
@@ -64,7 +65,9 @@ def create_kernel_images(
 
     for layer in model.layers:
         if not isinstance(layer, Conv2D):
+            print(f"layer {layer} is not an instance of Conv2D.")
             continue
+        print(f"layer {layer} IS an instance of Conv2D.")
 
         num_filters = layer.get_weights()[0].shape[-1]
         activation_model = Model(inputs=model.input, outputs=layer.output)
@@ -79,18 +82,17 @@ def create_kernel_images(
 
 
 # multi class classification
-def create_model(img_size: tuple[int, int], num_classes: int) -> Model:
-    height, width = img_size
-    input_image = Input(shape=(height, width, 1))
-    # TODO: fix hardcoded values
-    # adds some extra features after the convolution layers
-    extra_features = Input(shape=(4,))
+def create_model(img_size: tuple[int, int, int], num_classes: int, num_extra_features: int) -> Model:
+    height, width, num_color_channels = img_size
 
-    # x = Conv2D(1, (3, 3), padding="same", activation="relu")(input_image)
-    # x = MaxPooling2D((2, 2))(x)
-    #
-    # x = Conv2D(2, (3, 3), padding="valid", activation="relu")(x)
-    # x = MaxPooling2D((2, 2))(x)
+    input_image = Input(shape=(height, width, num_color_channels, ))
+    extra_features = Input(shape=(num_extra_features,))
+
+    x = Conv2D(1, (3, 3), padding="same", activation="relu")(input_image)
+    x = MaxPooling2D((2, 2))(x)
+
+    x = Conv2D(2, (3, 3), padding="valid", activation="relu")(x)
+    x = MaxPooling2D((2, 2))(x)
     #
     # x = Conv2D(4, (3, 3), padding="valid", activation="relu")(x)
     # x = MaxPooling2D((2, 2))(x)
@@ -104,7 +106,7 @@ def create_model(img_size: tuple[int, int], num_classes: int) -> Model:
     # x = Conv2D(32, (3, 3), padding="valid", activation="relu")(x)
     # x = MaxPooling2D((3, 3))(x)
 
-    post_convolution = Flatten()(input_image)
+    post_convolution = Flatten()(x)
     x = Concatenate()([post_convolution, extra_features])
 
     x = Dense(128)(x)
@@ -140,7 +142,7 @@ def train_test_model(
         monitor="val_loss", patience=10, restore_best_weights=True
     )
 
-    model.fit(
+    history = model.fit(
         [xTrain, fTrain],
         yTrain,
         epochs=epochs,
@@ -148,6 +150,15 @@ def train_test_model(
         callbacks=[early_stop],
     )
 
+
+    plt.figure()
+    plt.plot(history.history["loss"], label="training loss")
+    plt.plot(history.history['val_loss'])
+    plt.legend()
+    plt.tight_layout()
+    plt.show()
+    plt.savefig('loss_plots.png')
+    
     score = model.evaluate(
         [xTest, fTest],
         yTest,
@@ -192,9 +203,25 @@ def build_parser() -> argparse.ArgumentParser:
         "--balance",
         type=str,
         choices=["undersample", "none"],
-        default="none",
+        default="undersample",
         metavar="BALANCE",
         help="Undersampling: Clip all classes to the smallest",
+    )
+
+    parser.add_argument(
+        "--color",
+        type=str,
+        choices=["rgb", "gray"],
+        default="gray",
+        metavar="BALANCE",
+        help="Whether to use RGB color channels or grayscale color channels",
+    )
+
+    parser.add_argument(
+        "--csv_path",
+        type=Path,
+        default="../all_trails.csv",
+        help="Where the csv for all trail data is located",
     )
 
     return parser
@@ -208,19 +235,27 @@ def main():
     epochs: int = args.epochs
     output: Path = args.output
     balance = args.balance
+    color = args.color
+    csv_path: Path = args.csv_path
 
     if not path.is_dir():
         parser.error(f"Input directory {path} is not a valid directory")
 
-    # print(utils.get_dataset_info(path))
+    print(csv_path.suffix)
 
+    if not csv_path.is_file() or csv_path.suffix == "csv":
+        parser.error(f"CSV path {path} is not a valid csv file")
+
+    channels = 1 if color == "gray" else 3
     # NOTE: I know it's a very not good idea to have the hardcoded csv. This is for testing
     xTrain, xTest, yTrain, yTest, fTrain, fTest, label_encoder, img_size = (
-        utils.import_data(path, Path("../all_trails.csv"), balance=balance)
+        utils.import_data(path, Path("../all_trails.csv"), balance=balance, channels=channels)
     )
+
+    breakpoint()
     num_classes = len(label_encoder.classes_)
 
-    model = create_model(img_size, num_classes)
+    model = create_model(img_size, num_classes, len(fTrain[0]))
     model.summary()
 
     train_test_model(

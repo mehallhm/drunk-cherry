@@ -9,6 +9,8 @@ from PIL import Image
 
 seed = 1337
 
+np.random.seed(seed)
+
 extra_feature_set = {"elevation_gain", "elevation_loss", "average_grade", "max_grade"}
 
 difficulty_mapping = {
@@ -80,14 +82,15 @@ def combine_difficulties(difficulty: str) -> str:
 def import_data(
     path: Path,
     csv_path: Path,
-    balance: str = "none",
+    balance: str = "undersample",
     test_size: float = 0.25,
+    channels: int = 1,
 ) -> tuple:
     png_files = collect_pngs(path)
 
     with Image.open(png_files[0]) as img:
         img_width, img_height = img.size
-    img_size = (img_height, img_width)
+    img_size = (img_height, img_width, channels)
 
     trail_df = pd.read_csv(csv_path, index_col=0)
     missing_cols = [c for c in extra_feature_set if c not in trail_df.columns]
@@ -126,12 +129,19 @@ def import_data(
     # i know we could just return the trail_to_feature_map and index from that dictoinary, but just for consistency:
     features = []
 
+    i = 0
     for f in png_files:
+        i += 1
+        if i % 1000 == 0 or i == len(png_files):
+            print(f"Done with {i} / {len(png_files)}")
         trail_id = parse_trail_id(f.stem)
         difficulty = combine_difficulties(parse_difficulty(f.stem))
         try:
             with Image.open(f) as img:
-                arr = np.array(img.convert("L"), dtype=np.float32)
+                if channels == 1:
+                    arr = np.array(img.convert("L"), dtype=np.float32)
+                else:
+                    arr = np.array(img.convert("RGB"), dtype=np.float32)
         except OSError:
             print(f"It seems image gen file had a problem processing trail {trail_id}")
             continue
@@ -140,6 +150,8 @@ def import_data(
         labels.append(difficulty)
         features.append(trail_to_feature_map[trail_id])
 
+    # BUG: I'm still getting randomness in my output from the model but I think it's due to Python having a nondeterministic method for pulling files? I'm not sure though
+    # images_labels_features = zip(images, labels, features)
     X = np.stack(images, axis=0)[..., np.newaxis]  # (N, H, W, 1)
     F = np.stack(features, axis=0)
 
