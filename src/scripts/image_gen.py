@@ -136,7 +136,6 @@ def generate_trail_image(
     color_mode: str,
     elevation_marker: bool,
 ) -> Path:
-    # breakpoint()
     latitudes = trail_df["latitude"].values.astype(float)
     longitudes = trail_df["longitude"].values.astype(float)
     elevs = trail_df["elevation"].values.astype(float)

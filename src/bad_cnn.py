@@ -65,9 +65,9 @@ def create_kernel_images(
 
     for layer in model.layers:
         if not isinstance(layer, Conv2D):
-            print(f"layer {layer} is not an instance of Conv2D.")
+            # print(f"layer {layer} is not an instance of Conv2D.")
             continue
-        print(f"layer {layer} IS an instance of Conv2D.")
+        # print(f"layer {layer} IS an instance of Conv2D.")
 
         num_filters = layer.get_weights()[0].shape[-1]
         activation_model = Model(inputs=model.input, outputs=layer.output)
@@ -82,10 +82,18 @@ def create_kernel_images(
 
 
 # multi class classification
-def create_model(img_size: tuple[int, int, int], num_classes: int, num_extra_features: int) -> Model:
+def create_model(
+    img_size: tuple[int, int, int], num_classes: int, num_extra_features: int
+) -> Model:
     height, width, num_color_channels = img_size
 
-    input_image = Input(shape=(height, width, num_color_channels, ))
+    input_image = Input(
+        shape=(
+            height,
+            width,
+            num_color_channels,
+        )
+    )
     extra_features = Input(shape=(num_extra_features,))
 
     x = Conv2D(1, (3, 3), padding="same", activation="relu")(input_image)
@@ -147,18 +155,17 @@ def train_test_model(
         yTrain,
         epochs=epochs,
         validation_data=((xTest, fTest), yTest),
-        callbacks=[early_stop],
+        # callbacks=[early_stop],
     )
-
 
     plt.figure()
     plt.plot(history.history["loss"], label="training loss")
-    plt.plot(history.history['val_loss'])
+    plt.plot(history.history["val_loss"])
     plt.legend()
     plt.tight_layout()
     plt.show()
-    plt.savefig('loss_plots.png')
-    
+    plt.savefig("loss_plots.png")
+
     score = model.evaluate(
         [xTest, fTest],
         yTest,
@@ -241,18 +248,16 @@ def main():
     if not path.is_dir():
         parser.error(f"Input directory {path} is not a valid directory")
 
-    print(csv_path.suffix)
-
     if not csv_path.is_file() or csv_path.suffix == "csv":
         parser.error(f"CSV path {path} is not a valid csv file")
 
+    # TODO: Should be able to pull this information from the first image in the dataset instead of requiring a argument...
     channels = 1 if color == "gray" else 3
-    # NOTE: I know it's a very not good idea to have the hardcoded csv. This is for testing
+
     xTrain, xTest, yTrain, yTest, fTrain, fTest, label_encoder, img_size = (
-        utils.import_data(path, Path("../all_trails.csv"), balance=balance, channels=channels)
+        utils.import_data(path, csv_path, balance=balance, channels=channels)
     )
 
-    breakpoint()
     num_classes = len(label_encoder.classes_)
 
     model = create_model(img_size, num_classes, len(fTrain[0]))

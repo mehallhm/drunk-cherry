@@ -118,9 +118,11 @@ def import_data(
             chosen = rng.choice(files, size=min_count, replace=False)  # type: ignore[arg-type]
             selected.extend(chosen.tolist())
         png_files = selected
-        print(f"min_count: {min_count}")
     else:
         png_files = list(png_files)  # already a list; make a copy
+
+    # attempting to fix the nondeterminism of pulling files from a file system
+    png_files = sorted(png_files)
 
     # X
     images = []
@@ -139,19 +141,17 @@ def import_data(
         try:
             with Image.open(f) as img:
                 if channels == 1:
-                    arr = np.array(img.convert("L"), dtype=np.float32)
+                    image = np.array(img.convert("L"), dtype=np.float32)
                 else:
-                    arr = np.array(img.convert("RGB"), dtype=np.float32)
+                    image = np.array(img.convert("RGB"), dtype=np.float32)
         except OSError:
             print(f"It seems image gen file had a problem processing trail {trail_id}")
             continue
 
-        images.append(arr)
+        images.append(image)
         labels.append(difficulty)
         features.append(trail_to_feature_map[trail_id])
 
-    # BUG: I'm still getting randomness in my output from the model but I think it's due to Python having a nondeterministic method for pulling files? I'm not sure though
-    # images_labels_features = zip(images, labels, features)
     X = np.stack(images, axis=0)[..., np.newaxis]  # (N, H, W, 1)
     F = np.stack(features, axis=0)
 
