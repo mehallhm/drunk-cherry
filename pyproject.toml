@@ -9,12 +9,13 @@ description = "DS4420 Final Project - Michael Mehall & Paolo Lanaro"
 readme = "README.md"
 requires-python = ">=3.12"
 dependencies = [
-    "numpy",
-    "pandas",
-    "matplotlib",
-    "scikit-learn",
-    "keras",
-    "tensorflow",
-    # probably switching to pytorch soon?
-    # "pytorch"
+    "ipykernel>=7.2.0",
+    "keras>=3.13.2",
+    "matplotlib>=3.10.8",
+    "numpy>=2.4.3",
+    "pandas>=3.0.1",
+    "scikit-learn>=1.8.0",
+    "tensorflow>=2.21.0",
+    "torch>=2.11.0",
+    "torchvision>=0.26.0",
 ]
