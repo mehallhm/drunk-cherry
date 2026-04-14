@@ -5,8 +5,12 @@ Helpers to load trail data
 import pandas as pd
 
 KNOWN_DIFFICULTIES = [
-    "Easy", "Easy/Intermediate", "Intermediate",
-    "Intermediate/Difficult", "Difficult", "Very Difficult",
+    "Easy",
+    "Easy/Intermediate",
+    "Intermediate",
+    "Intermediate/Difficult",
+    "Difficult",
+    "Very Difficult",
 ]
 
 DIFFICULTY_MAP = {
@@ -17,6 +21,7 @@ DIFFICULTY_MAP = {
     "Difficult": "Difficult",
     "Very Difficult": "Very Difficult",
 }
+
 
 def load_trail_data(path: str) -> pd.DataFrame:
     """
@@ -29,17 +34,29 @@ def load_trail_data(path: str) -> pd.DataFrame:
     df = pd.read_csv(path, encoding="utf-8", compression="zip")
     df = df.drop(columns=["Unnamed: 0"], errors="ignore")
 
-    trail_attrs = ["difficulty", "rating", "length", "elevation_gain",
-                   "elevation_loss", "average_grade", "max_grade"]
+    trail_attrs = [
+        "difficulty",
+        "rating",
+        "length",
+        "elevation_gain",
+        "elevation_loss",
+        "average_grade",
+        "max_grade",
+    ]
 
-    grouped = df.groupby("trail_id", sort=False).agg(
-        **{col: (col, "first") for col in trail_attrs},
-        latitude=("latitude", list),
-        longitude=("longitude", list),
-        elevation=("elevation", list),
-    ).reset_index()
+    grouped = (
+        df.groupby("trail_id", sort=False)
+        .agg(
+            **{col: (col, "first") for col in trail_attrs},
+            latitude=("latitude", list),
+            longitude=("longitude", list),
+            elevation=("elevation", list),
+        )
+        .reset_index()
+    )
 
     return grouped
+
 
 def clean_trails(df: pd.DataFrame) -> pd.DataFrame:
     """
@@ -50,6 +67,7 @@ def clean_trails(df: pd.DataFrame) -> pd.DataFrame:
     # remove nans from difficulty column
     df.dropna(subset=["difficulty"])
     return df
+
 
 def filter_known_difficulties(df: pd.DataFrame) -> pd.DataFrame:
     """

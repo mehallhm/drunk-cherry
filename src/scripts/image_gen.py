@@ -1,5 +1,3 @@
-# Michael Mehall & Paolo Lanaro - Image Generator from bike trail data
-
 import argparse
 import os
 import sys
