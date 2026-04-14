@@ -10,9 +10,9 @@ import numpy as np
 import pandas as pd
 from PIL import Image
 
-IMG_SIZE = 512  # output image width adn height in pixels
+IMG_SIZE = 256  # output image width adn height in pixels
 PADDING_PX = 24  # blank border padding around the trail
-LINE_WIDTH = 2  # pixel thickness (radius) of the trail line
+LINE_WIDTH = 4  # pixel thickness (radius) of the trail line
 DOT_RADIUS = 3  # radius of GPS point dots drawn on top of lines
 
 elevation_to_RGB_mapping = [
@@ -22,6 +22,15 @@ elevation_to_RGB_mapping = [
     (0.75, np.array([220, 220, 0], dtype=float)),
     (1.00, np.array([220, 0, 0], dtype=float)),
 ]
+
+known_diffs = {
+    "Easy",
+    "Easy/Intermediate",
+    "Intermediate",
+    "Difficult",
+    "Intermediate/Difficult",
+    "Very Difficult",
+}
 
 
 # maps normalized elevation value to an RGB color
@@ -59,7 +68,8 @@ def draw_line_segment(
     x1: int,
     y1: int,
     color1: tuple,
-    thickness: int = 2,
+    thickness: int,
+    is_grayscale: bool,
 ) -> None:
     h, w = pixels.shape[:2]
 
@@ -85,7 +95,7 @@ def draw_line_segment(
             for ox in range(-radius, radius + 1):
                 px, py = cx + ox, cy + oy
                 if 0 <= px < w and 0 <= py < h:
-                    pixels[py, px] = spine_color
+                    pixels[py, px] = spine_color[0] if is_grayscale else spine_color
 
         if cx == x1 and cy == y1:
             break
@@ -101,14 +111,16 @@ def draw_line_segment(
             travelled += 1
 
 
-def draw_dot(pixels: np.ndarray, cx: int, cy: int, radius: int, color: tuple) -> None:
+def draw_dot(
+    pixels: np.ndarray, cx: int, cy: int, radius: int, color: tuple, is_grayscale: bool
+) -> None:
     height, width = pixels.shape[:2]
     for dy in range(-radius, radius + 1):
         for dx in range(-radius, radius + 1):
             if dx * dx + dy * dy <= radius**2:
                 px, py = cx + dx, cy + dy
                 if 0 <= px < width and 0 <= py < height:
-                    pixels[py, px] = color
+                    pixels[py, px] = color[0] if is_grayscale else color
 
 
 # create a single image for trail_id with trail_df
@@ -120,6 +132,9 @@ def generate_trail_image(
     output_dir: Path,
     global_elev_min: float,
     global_elev_max: float,
+    use_global_elevation: bool,
+    color_mode: str,
+    elevation_marker: bool,
 ) -> Path:
     latitudes = trail_df["latitude"].values.astype(float)
     longitudes = trail_df["longitude"].values.astype(float)
@@ -139,39 +154,79 @@ def generate_trail_image(
         )
         return px, py
 
-    global_elevation_range = global_elev_max - global_elev_min
+    if use_global_elevation:
+        elevation_min, elevation_max = global_elev_min, global_elev_max
+    else:
+        elevation_min = float(elevs.min())
+        elevation_max = float(elevs.max())
+    elevation_range = max(elevation_max - elevation_min, 1e-9)
 
     def normalize_elevation(elevation):
-        return (elevation - global_elev_min) / global_elevation_range
+        return (elevation - elevation_min) / elevation_range
 
-    # create image canvas
-    pixels = np.zeros((IMG_SIZE, IMG_SIZE, 3), dtype=np.uint8)
-    pixels[:] = (0, 0, 0)  # background
+    # NOTE: average elevation with a global scale washes most of the trail out!
+    average_elevation = float(np.mean(elevs) - elevation_min) / elevation_range
+    # average_elevation = 0
+
+    # create the image canvas
+    if color_mode == "rgb":
+        background_color = elevation_to_color(average_elevation)
+        pixels = np.full((IMG_SIZE, IMG_SIZE, 3), background_color, dtype=np.uint8)
+    else:
+        background_intensity = int(average_elevation * 255)
+        pixels = np.full((IMG_SIZE, IMG_SIZE), background_intensity, dtype=np.uint8)
 
     # pixel positions and colors for all GPS point
     coords = [to_coordinates(lat, lon) for lat, lon in zip(latitudes, longitudes)]
-    colors = [elevation_to_color(normalize_elevation(elevation)) for elevation in elevs]
+
+    if color_mode == "rgb":
+        line_colors = [
+            elevation_to_color(normalize_elevation(elevation)) for elevation in elevs
+        ]
+    else:
+        line_colors = [
+            (int(normalize_elevation(elevation) * 255),) * 3 for elevation in elevs
+        ]
+
+    is_grayscale = color_mode == "gray"
 
     # connected line segments first
     for i in range(len(coords) - 1):
         x0, y0 = coords[i]
         x1, y1 = coords[i + 1]
         draw_line_segment(
-            pixels, x0, y0, colors[i], x1, y1, colors[i + 1], thickness=LINE_WIDTH
+            pixels,
+            x0,
+            y0,
+            line_colors[i],
+            x1,
+            y1,
+            line_colors[i + 1],
+            LINE_WIDTH,
+            is_grayscale,
         )
 
     # draw dots at each GPS point on top of the lines
-    for (px, py), color in zip(coords, colors):
-        draw_dot(pixels, px, py, DOT_RADIUS, color)
+    for (px, py), color in zip(coords, line_colors):
+        draw_dot(pixels, px, py, DOT_RADIUS, color, is_grayscale)
 
-    start_color = (255, 255, 255)
-    end_color = (255, 0, 255)
+    # TODO: Make it so that the start and end colors of the trail are the same as the elevation, but different shapes
+    if elevation_marker:
+        start_color = line_colors[0]
+        end_color = line_colors[-1]
+    else:
+        start_color = (255, 255, 255)
+        end_color = (255, 0, 255)
 
     # create starting (white) and ending (purple) markers
-    draw_dot(pixels, coords[0][0], coords[0][1], DOT_RADIUS * 2, start_color)
-    draw_dot(pixels, coords[-1][0], coords[-1][1], DOT_RADIUS * 2, end_color)
+    draw_dot(
+        pixels, coords[0][0], coords[0][1], DOT_RADIUS * 2, start_color, is_grayscale
+    )
+    draw_dot(
+        pixels, coords[-1][0], coords[-1][1], DOT_RADIUS * 2, end_color, is_grayscale
+    )
 
-    img = Image.fromarray(pixels, mode="RGB")
+    img = Image.fromarray(pixels, mode=("RGB" if color_mode == "rgb" else "L"))
 
     difficulty = (
         trail_df["difficulty"].iloc[0]
@@ -186,26 +241,54 @@ def generate_trail_image(
 
 def process_single_trail(
     df: pd.DataFrame,
-    trail_id,
+    trail_id: int,
     output_dir: Path,
-    global_elev_min: float,
-    global_elev_max: float,
+    use_global_elevation: bool,
+    color_mode: str,
+    elevation_marker: bool,
 ) -> None:
     subset = df[df["trail_id"] == trail_id]
     if subset.empty:
         print(f"[ERROR] trail_id {trail_id} not found in the dataset.")
         sys.exit(1)
+
+    global_elev_min = float(min(df["elevation"].values))
+    global_elev_max = float(max(df["elevation"].values))
+
     out = generate_trail_image(
-        subset, trail_id, output_dir, global_elev_min, global_elev_max
+        subset,
+        trail_id,
+        output_dir,
+        global_elev_min,
+        global_elev_max,
+        use_global_elevation,
+        color_mode,
+        elevation_marker,
     )
     print(f"Saved: {out}")
 
 
 def worker(args):
-    trail_id, group_df, output_dir, elevation_min, elevation_max = args
+    (
+        trail_id,
+        group_df,
+        output_dir,
+        global_elevation_min,
+        global_elevation_max,
+        use_global_elevation,
+        color_mode,
+        elevation_marker,
+    ) = args
     try:
         out = generate_trail_image(
-            group_df, trail_id, output_dir, elevation_min, elevation_max
+            group_df,
+            trail_id,
+            output_dir,
+            global_elevation_min,
+            global_elevation_max,
+            use_global_elevation,
+            color_mode,
+            elevation_marker,
         )
         return trail_id, out
     except Exception as exc:
@@ -216,8 +299,9 @@ def process_all_trails(
     df: pd.DataFrame,
     output_dir: Path,
     num_threads: int,
-    global_elev_min: float,
-    global_elev_max: float,
+    use_global_elevation: bool,
+    color_mode: str,
+    elevation_marker: bool,
 ) -> None:
     groups = list(df.groupby("trail_id"))
     total = len(groups)
@@ -225,8 +309,20 @@ def process_all_trails(
 
     print(f"Processing {total} trails with {num_threads} thread(s)...")
 
+    global_elev_min = float(min(df["elevation"].values))
+    global_elev_max = float(max(df["elevation"].values))
+
     work_items = [
-        (trail_id, group_df, output_dir, global_elev_min, global_elev_max)
+        (
+            trail_id,
+            group_df,
+            output_dir,
+            global_elev_min,
+            global_elev_max,
+            use_global_elevation,
+            color_mode,
+            elevation_marker,
+        )
         for trail_id, group_df in groups
     ]
 
@@ -306,13 +402,53 @@ def build_parser() -> argparse.ArgumentParser:
             "Number of threads for --all mode (default: 1). Pass 0 to use all but one available CPU cores."
         ),
     )
+    parser.add_argument(
+        "--global_elevation",
+        action="store_true",
+        default=False,
+        help=(
+            "Whether to globally min max scale the elevation heatmaps. Default is using per-image elevation scales for heatmaps"
+        ),
+    )
+    parser.add_argument(
+        "--color",
+        type=str,
+        choices=["rgb", "gray"],
+        default="gray",
+        help=("Whether to create RGB channel or grayscale images"),
+    )
+
+    parser.add_argument(
+        "--verbose",
+        "-v",
+        action="store_true",
+        default=False,
+    )
+
+    parser.add_argument(
+        "--elevation_marker",
+        action="store_true",
+        default=False,
+    )
 
     return parser
+
+
+def filter_bad_difficulties(df: pd.DataFrame) -> tuple[pd.DataFrame, set]:
+    bad_ids = {
+        trail_id
+        for trail_id, group in df.groupby("trail_id")
+        if bool(group["difficulty"].isnull().any())
+        or not bool(group["difficulty"].dropna().map(lambda d: d in known_diffs).all())
+    }
+
+    return df[~df["trail_id"].isin(list(bad_ids))], bad_ids
 
 
 def main() -> None:
     parser = build_parser()
     args = parser.parse_args()
+    verbose = args.verbose
 
     csv_path: Path = args.input
     if not csv_path.is_file():
@@ -322,23 +458,50 @@ def main() -> None:
     output_dir.mkdir(parents=True, exist_ok=True)
 
     df = pd.read_csv(csv_path, index_col=0)
-    print("Succesfully read CSV")
-    print(f"Loaded {len(df):,} rows, {df['trail_id'].nunique():,} unique trails.")
+    if verbose:
+        print("Succesfully read CSV")
+        print(f"Loaded {len(df):,} rows, {df['trail_id'].nunique():,} unique trails.")
 
-    # computes global elevation bounds.
-    # trails that don't climb much stay blue but trains that climb a lot of elevatoin go from blue to red
-    global_elev_min = float(min(df["elevation"].values))
-    global_elev_max = float(max(df["elevation"].values))
-    print(f"Global elevation range: {global_elev_min:.1f} m -> {global_elev_max:.1f} m")
+    df, bad_diff_ids = filter_bad_difficulties(df)
+    if verbose:
+        print(f"Trail IDs for trails without difficulties: {bad_diff_ids}")
+
+    use_global_elevation = args.global_elevation
+    if verbose:
+        print(f"Elevation scaling {'global' if use_global_elevation else 'per-trail'}")
+
+    color_mode = args.color
+    if verbose:
+        print(
+            f"Processing images in {'RGB' if color_mode == 'rgb' else 'grayscale'} mode"
+        )
+
+    elevation_marker = args.elevation_marker
+    if verbose:
+        print(
+            "Color start and end markers using trail's elevation rather than fixed colors"
+        )
 
     if args.trail_id is not None:
         process_single_trail(
-            df, args.trail_id, output_dir, global_elev_min, global_elev_max
+            df,
+            args.trail_id,
+            output_dir,
+            use_global_elevation,
+            color_mode,
+            elevation_marker,
         )
     else:
         # either use specified number of threads, or one minus logical CPU count
         n_threads = args.threads if args.threads > 0 else ((os.cpu_count() or 2) - 1)
-        process_all_trails(df, output_dir, n_threads, global_elev_min, global_elev_max)
+        process_all_trails(
+            df,
+            output_dir,
+            n_threads,
+            use_global_elevation,
+            color_mode,
+            elevation_marker,
+        )
 
 
 if __name__ == "__main__":

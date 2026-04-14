@@ -1,0 +1,193 @@
+from pathlib import Path
+
+import numpy as np
+import pandas as pd
+import keras
+from sklearn.model_selection import train_test_split
+from sklearn.preprocessing import LabelEncoder
+from PIL import Image
+
+seed = 1337
+
+np.random.seed(seed)
+
+extra_feature_set = {"elevation_gain", "elevation_loss", "average_grade", "max_grade"}
+
+difficulty_mapping = {
+    "Easy": "Easy",
+    "Easy_Intermediate": "Easy",
+    "Intermediate": "Intermediate",
+    "Intermediate_Difficult": "Intermediate_Difficult",
+    "Difficult": "Difficult",
+    "Very_Difficult": "Difficult",
+}
+
+
+def parse_stem(stem: str) -> tuple[str, str]:
+    parts = stem.split("_")
+    if len(parts) < 3:
+        raise ValueError(f"Unexpected filename format {stem}")
+    trail_id = parts[1]
+    difficulty = "_".join(parts[2:])
+    return trail_id, difficulty
+
+
+def parse_difficulty(stem: str) -> str:
+    _, difficulty = parse_stem(stem)
+    return difficulty
+
+
+def parse_trail_id(stem: str) -> str:
+    trail_id, _ = parse_stem(stem)
+    return trail_id
+
+
+def get_dataset_info(path: Path) -> dict:
+    png_files = collect_pngs(path)
+
+    with Image.open(png_files[0]) as img:
+        img_width, img_height = img.size
+
+    class_counts: dict[str, int] = {}
+    trail_ids: set[str] = set()
+
+    for f in png_files:
+        trail_id, difficulty = parse_stem(f.stem)
+        difficulty = combine_difficulties(difficulty)
+        trail_ids.add(trail_id)
+        class_counts[difficulty] = class_counts.get(difficulty, 0) + 1
+
+    total = len(png_files)
+    classes = sorted(class_counts.keys())
+
+    return {
+        "total": total,
+        "img_size": (img_height, img_width),
+        "classes": classes,
+        "num_classes": len(classes),
+        "class_counts": class_counts,
+        "class_ratio": {k: v / total for k, v in class_counts.items()},
+        "trail_ids": trail_ids,
+        "min_class_count": min(class_counts.values()),
+        "max_class_count": max(class_counts.values()),
+    }
+
+
+def combine_difficulties(difficulty: str) -> str:
+    if difficulty not in difficulty_mapping:
+        raise ValueError(f"Unknown difficulty label: '{difficulty}'")
+    return difficulty_mapping[difficulty]
+
+
+def import_data(
+    path: Path,
+    csv_path: Path,
+    balance: str = "undersample",
+    test_size: float = 0.25,
+    channels: int = 1,
+) -> tuple:
+    png_files = collect_pngs(path)
+
+    with Image.open(png_files[0]) as img:
+        img_width, img_height = img.size
+    img_size = (img_height, img_width, channels)
+
+    trail_df = pd.read_csv(csv_path, index_col=0)
+    missing_cols = [c for c in extra_feature_set if c not in trail_df.columns]
+    if missing_cols:
+        raise ValueError(f"CSV missing {missing_cols} columns")
+
+    # dictionary from trail_id to an np.array of that trails "extra features"
+    trail_to_feature_map = {
+        str(row["trail_id"]): np.array(
+            [row[c] for c in extra_feature_set], dtype=np.float32
+        )
+        for _, row in trail_df.drop_duplicates(subset="trail_id").iterrows()
+    }
+
+    images_by_class = {}
+    for f in png_files:
+        difficulty = combine_difficulties(parse_difficulty(f.stem))
+        images_by_class.setdefault(difficulty, []).append(f)
+
+    if balance == "undersample":
+        min_count = min(len(v) for v in images_by_class.values())
+        rng = np.random.default_rng(seed)
+        selected: list[Path] = []
+        for files in images_by_class.values():
+            chosen = rng.choice(files, size=min_count, replace=False)  # type: ignore[arg-type]
+            selected.extend(chosen.tolist())
+        png_files = selected
+    else:
+        png_files = list(png_files)  # already a list; make a copy
+
+    # attempting to fix the nondeterminism of pulling files from a file system
+    png_files = sorted(png_files)
+
+    # X
+    images = []
+    # y
+    labels = []
+    # i know we could just return the trail_to_feature_map and index from that dictoinary, but just for consistency:
+    features = []
+
+    i = 0
+    for f in png_files:
+        i += 1
+        if i % 1000 == 0 or i == len(png_files):
+            print(f"Done with {i} / {len(png_files)}")
+        trail_id = parse_trail_id(f.stem)
+        difficulty = combine_difficulties(parse_difficulty(f.stem))
+        try:
+            with Image.open(f) as img:
+                if channels == 1:
+                    image = np.array(img.convert("L"), dtype=np.float32)
+                else:
+                    image = np.array(img.convert("RGB"), dtype=np.float32)
+        except OSError:
+            print(f"It seems image gen file had a problem processing trail {trail_id}")
+            continue
+
+        images.append(image)
+        labels.append(difficulty)
+        features.append(trail_to_feature_map[trail_id])
+
+    X = np.stack(images, axis=0)[..., np.newaxis]  # (N, H, W, 1)
+    F = np.stack(features, axis=0)
+
+    le = LabelEncoder()
+    y_int = le.fit_transform(labels)
+    num_classes = len(le.classes_)
+    y_onehot = keras.utils.to_categorical(y_int, num_classes=num_classes)
+
+    # Print class distribution after optional balancing
+    unique, counts = np.unique(y_int, return_counts=True)
+    print(f"{num_classes} classes (balance='{balance}'):")
+    for idx, cnt in zip(unique, counts):
+        print(f"  {le.classes_[idx]}: {cnt / len(labels):.1%}  ({cnt} images)")
+
+    xTrain, xTest, yTrain, yTest, fTrain, fTest = train_test_split(
+        X, y_onehot, F, test_size=test_size, random_state=seed, stratify=y_int
+    )
+
+    xTrain = xTrain / 255.0
+    xTest = xTest / 255.0
+
+    # since we'll be using the extra features after convolutions, we have to normalize between [0, 1]
+    f_min = fTrain.min(axis=0)
+    f_max = fTrain.max(axis=0)
+    f_range = np.where(f_max - f_min > 1e-9, f_max - f_min, 1.0)
+    fTrain = (fTrain - f_min) / f_range
+    fTest = (fTest - f_min) / f_range
+
+    return (xTrain, xTest, yTrain, yTest, fTrain, fTest, le, img_size)
+
+
+def collect_pngs(path: Path) -> list[Path]:
+    path = Path(path)
+    png_files = sorted(
+        f for f in path.iterdir() if f.is_file() and f.suffix.lower() == ".png"
+    )
+    if not png_files:
+        raise FileNotFoundError(f"No PNG images found at {path}")
+    return png_files
