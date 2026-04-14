@@ -265,7 +265,7 @@ plot_mcmc <- function(post_chain, sample_idx) {
   }
 
   if (verbose) {
-    cat(sprintf("Saved chain + ACF plots for all %d features\n", P))
+    cat(sprintf("Saved chain + ACF plots for all %d features\n", feature_count))
   }
 }
 
@@ -315,9 +315,9 @@ plot_posteriors <- function(post_chain, sample_idx) {
            p_dens, width = 7, height = 6, dpi = 150)
   }
 
-  coef_rows <- lapply(seq_len(P), function(feature_count) {
+  coef_rows <- lapply(seq_len(feature_count), function(feature_count) {
     lapply(seq_len(class_count - 1), function(class_idx) {
-      weight_samples <- post_chain[, feaure_count, class_idx]
+      weight_samples <- post_chain[, feature_count, class_idx]
       data.frame(feature = FEAT_NAMES[feature_count],
                  class = CLASS_LEVELS[class_idx],
                  mean = mean(weight_samples),
