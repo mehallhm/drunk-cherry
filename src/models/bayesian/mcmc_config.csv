@@ -1,0 +1,9 @@
+"parameter","value"
+"n_iter",4e+05
+"burnin",72000
+"burnin_ratio",0.18
+"thin",200
+"proposal_sd",0.05
+"sigma_prior",3
+"n_samples_kept",1640
+"acceptance_rate",0.0022875
