@@ -7,8 +7,8 @@ import argparse
 from pathlib import Path
 
 import keras
-from keras.callbacks import EarlyStopping
-import tensorflow as tf
+from keras.callbacks import ModelCheckpoint
+
 import matplotlib.pyplot as plt
 
 import utils
@@ -17,7 +17,6 @@ from cnn.utils import create_kernel_images
 
 seed = 1337
 np.random.seed(seed)
-tf.random.set_seed(seed)
 keras.utils.set_random_seed(seed)
 
 
@@ -29,8 +28,10 @@ def train_test_model(
 ) -> None:
     xTrain, xTest, fTrain, fTest, yTrain, yTest = data
 
-    early_stop = EarlyStopping(
-        monitor="val_loss", patience=10, restore_best_weights=True
+    save_best_model = ModelCheckpoint(
+        output_path,
+        monitor="val_loss",
+        save_best_only=True,
     )
 
     history = model.fit(
@@ -38,26 +39,25 @@ def train_test_model(
         yTrain,
         epochs=epochs,
         validation_data=((xTest, fTest), yTest),
-        # callbacks=[early_stop],
+        callbacks=[save_best_model],
     )
 
     plt.figure()
-    plt.plot(history.history["loss"], label="training loss")
-    plt.plot(history.history["val_loss"])
+    plt.plot(history.history["loss"], label="Training Loss")
+    plt.plot(history.history["val_loss"], label="Validation Loss")
     plt.legend()
     plt.tight_layout()
+    plt.savefig("cnn_loss_plots.png")
     plt.show()
-    plt.savefig("loss_plots.png")
+
+    print(f"Best model saved to {output_path}")
 
     score = model.evaluate(
         [xTest, fTest],
         yTest,
     )
-    print("\nloss = ", score[0])
-    print("accuracy = ", score[1])
-
-    model.save(output_path)
-    print(f"Model saved to {output_path}")
+    print("\nTraining Loss = ", score[0])
+    print("Training Accuracy = ", score[1])
 
 
 def build_parser() -> argparse.ArgumentParser:
@@ -140,6 +140,7 @@ def main():
     xTrain, xTest, yTrain, yTest, fTrain, fTest, label_encoder, img_size = (
         utils.import_data(path, csv_path, balance=balance, channels=channels)
     )
+    print(f"{len(xTrain)} Training images and {len(xTest)} Val/Testing images")
 
     num_classes = len(label_encoder.classes_)
 
@@ -152,7 +153,7 @@ def main():
 
     create_kernel_images(model, (xTest, fTest))
 
-    print("done")
+    print("Done running the CNN model")
 
 
 if __name__ == "__main__":

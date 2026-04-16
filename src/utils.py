@@ -134,8 +134,8 @@ def import_data(
     i = 0
     for f in png_files:
         i += 1
-        if i % 1000 == 0 or i == len(png_files):
-            print(f"Done with {i} / {len(png_files)}")
+        if i % 2500 == 0 or i == len(png_files):
+            print(f"Extracted features from {i} / {len(png_files)} images")
         trail_id = parse_trail_id(f.stem)
         difficulty = combine_difficulties(parse_difficulty(f.stem))
         try:

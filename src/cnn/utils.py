@@ -48,4 +48,5 @@ def create_kernel_images(
             save_feature_map(
                 act_map,
                 output_dir / f"{layer.name}_filter_{filter_idx}_activation.png",
+                cmap="gray",
             )

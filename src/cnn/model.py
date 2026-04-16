@@ -11,7 +11,6 @@ from keras.layers import (
 )
 
 
-# multi class classification
 def create_model(
     img_size: tuple[int, int, int], num_classes: int, num_extra_features: int
 ) -> Model:
@@ -27,22 +26,10 @@ def create_model(
     extra_features = Input(shape=(num_extra_features,))
 
     x = Conv2D(1, (3, 3), padding="same", activation="relu")(input_image)
-    x = MaxPooling2D((2, 2))(x)
+    x = MaxPooling2D((5, 5))(x)
 
     x = Conv2D(2, (3, 3), padding="valid", activation="relu")(x)
-    x = MaxPooling2D((2, 2))(x)
-    #
-    # x = Conv2D(4, (3, 3), padding="valid", activation="relu")(x)
-    # x = MaxPooling2D((2, 2))(x)
-    #
-    # x = Conv2D(8, (3, 3), padding="valid", activation="relu")(x)
-    # x = MaxPooling2D((2, 2))(x)
-
-    # x = Conv2D(16, (3, 3), padding="valid", activation="relu")(x)
-    # x = MaxPooling2D((2, 2))(x)
-
-    # x = Conv2D(32, (3, 3), padding="valid", activation="relu")(x)
-    # x = MaxPooling2D((3, 3))(x)
+    x = MaxPooling2D((5, 5))(x)
 
     post_convolution = Flatten()(x)
     x = Concatenate()([post_convolution, extra_features])
