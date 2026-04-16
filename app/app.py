@@ -241,11 +241,25 @@ def predict(model: keras.Model, image: Image.Image, features: np.ndarray) -> tup
 # ---------------------------------------------------------------------------
 # Streamlit UI
 # ---------------------------------------------------------------------------
-def main():
-    st.set_page_config(page_title="Trail Difficulty Predictor", layout="wide")
-    st.title("Trail Difficulty Predictor")
-    st.write("Upload a GPX file to visualize the trail and predict its difficulty.")
+def landing_page():
+    st.header("About")
+    st.write(
+        """
+Trail rating remains a difficult and inherently human process. Across a variety of outdoor activities (e.g. hiking, cycling, and skiing) difficulty ratings rely on relative systems defined and applied locally, preventing trail users from comparing difficulties between areas. At worst, this inconsistency poses a safety concern: a rider or hiker who performs competently at a given rating in one region, may encounter dramatically more challenging terrain under the same rating elsewhere, leading to potential injury. Adopting a more algorithmic approach, driven by quantifiable trail features and standardized across regions, would allow users to access appropriate difficulty information and make informed decisions that support both safety and activity enjoyment.
+The space of categorizing mountain biking (MTB) trails specifically is of interest. The International Mountain Bicycling Association (IMBA) provides a widely referenced rating scale, yet its application is ultimately left to local trail builders and land maintainers, introducing the subjectivity and regional inconsistencies observed in other disciplines. Further, compared to hiking or skiing, relatively little prior work has explored data-driven approaches to MTB trail classification, leaving the problem largely unaddressed in the literature.
+A promising data source for this task is the GPX file format. GPX files are routinely recorded by riders using consumer GPS devices and encode georeferenced sequences of latitude, longitude, and elevation at high temporal resolution. From these traces, features relevant to perceived difficulty, such as total elevation gain, grade, elevation variability, and descent profiles, can be extracted without requiring specialized survey equipment. The ubiquity of GPX data, combined with platforms that aggregate user-recorded rides alongside community-assigned ratings, creates an opportunity to build labeled datasets at scale.
+This work presents a two-pronged modeling approach to automated MTB trail difficulty classification. A convolutional neural network (CNN) is trained to learn spatial patterns directly from processed GPX representations, while a Bayesian model offers a complementary probabilistic framework that quantifies uncertainty in its predictions, especially valuable given the subjectivity inherent in trail ratings. To demonstrate the practical applicability, the resulting models are integrated into a web application that allows a user to upload a GPX file and receive a predicted difficulty rating.
+"""
+    )
+    st.subheader("How it works")
+    st.write(
+        "1. Upload a GPX file or select one of the bundled examples.\n"
+        "2. The trail is rendered as a grayscale elevation heatmap.\n"
+        "3. A CNN model predicts the trail difficulty."
+    )
 
+
+def predictor_page():
     # ---- discover bundled example GPX files ----
     examples: dict[str, Path] = {}
     if EXAMPLES_DIR.is_dir():
@@ -315,6 +329,19 @@ def main():
         st.metric("Elevation Loss", f"{features[1]:.1f} m")
         st.metric("Average Grade", f"{features[2]:.2f}%")
         st.metric("Max Grade", f"{features[3]:.2f}%")
+
+
+def main():
+    st.set_page_config(page_title="Trail Difficulty Predictor", layout="wide")
+    st.title("Trail Difficulty Predictor")
+
+    tab_home, tab_predict = st.tabs(["Home", "Predict"])
+
+    with tab_home:
+        landing_page()
+
+    with tab_predict:
+        predictor_page()
 
 
 if __name__ == "__main__":
