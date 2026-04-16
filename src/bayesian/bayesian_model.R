@@ -16,7 +16,7 @@ FEATURE_COLS <- c("elevation_gain", "elevation_loss", "average_grade", "max_grad
 CLASS_LEVELS <- c("Easy", "Intermediate", "Intermediate/Difficult", "Difficult")
 FEAT_NAMES <- c("Intercept", FEATURE_COLS)
 
-N_ITER <- 400000
+N_ITER <- 1500000
 BURNIN_RATIO <- 0.18
 BURNIN <- floor(N_ITER * BURNIN_RATIO)
 
@@ -270,7 +270,7 @@ plot_mcmc <- function(post_chain, sample_idx) {
 }
 
 
-plot_posteriors <- function(post_chain, sample_idx) {
+plot_priors <- function(post_chain, sample_idx) {
   feature_count <- dim(post_chain)[2]
 
   for (feature_idx in seq_len(feature_count)) {
@@ -306,12 +306,12 @@ plot_posteriors <- function(post_chain, sample_idx) {
       scale_fill_manual(values = CLASS_COLORS) +
       scale_color_manual(values = CLASS_COLORS) +
       facet_wrap(~ class, ncol = 1, scales = "free_y") +
-      labs(title = sprintf("Posterior Distribution — %s", feat_label),
-           subtitle = "Solid = posterior mean | Dashed = 95% credible interval",
+      labs(title = sprintf("Prior Distribution — %s", feat_label),
+           subtitle = "Solid = prior mean | Dashed = 95% credible interval",
            x = "Weight Value", y = "Density") +
       theme_bayes() + theme(legend.position = "none")
 
-    ggsave(file.path(PLOT_DIR, sprintf("posterior_density_%s.png", file_label)),
+    ggsave(file.path(PLOT_DIR, sprintf("prior_density_%s.png", file_label)),
            p_dens, width = 7, height = 6, dpi = 150)
   }
 
@@ -329,7 +329,7 @@ plot_posteriors <- function(post_chain, sample_idx) {
   coef_df$feature <- factor(coef_df$feature, levels = rev(FEAT_NAMES))
   coef_df$class <- factor(coef_df$class, levels = CLASS_LEVELS[seq_len(class_count - 1)])
 
-  if (verbose) cat("Saved posterior density plots.\n")
+  if (verbose) cat("Saved prior density plots.\n")
 }
 
 # predict and evaluate the model
@@ -572,8 +572,8 @@ main <- function() {
   # MCMC diagnostic plots (chain + ACF, with thinning)
   plot_mcmc(mcmc$post_chain, mcmc$sample_idx)
 
-  # posterior distribution plots
-  plot_posteriors(mcmc$post_chain, mcmc$sample_idx)
+  # prior distribution plots
+  plot_priors(mcmc$post_chain, mcmc$sample_idx)
 
   # evaluate and plot predictions
   results <- evaluate_and_plot(
