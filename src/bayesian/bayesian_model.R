@@ -10,7 +10,7 @@ set.seed(1337)
 
 DATA_PATH <- "../../all_trails.csv"
 MODEL_OUT_DIR <- "../models/bayesian/"
-PLOT_DIR <- "../models/bayesian/plots/"
+PLOT_DIR <- "./bayesian/plots/"
 
 FEATURE_COLS <- c("elevation_gain", "elevation_loss", "average_grade", "max_grade")
 CLASS_LEVELS <- c("Easy", "Intermediate", "Intermediate/Difficult", "Difficult")
