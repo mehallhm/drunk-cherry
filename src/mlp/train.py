@@ -7,10 +7,13 @@ from pathlib import Path
 
 import pandas as pd
 from keras import backend as K
+from sklearn.model_selection import train_test_split
 
 from trail_helpers import prepare_trail_data
 from mlp.model import model, NUM_OBSERVATIONS
 from mlp.utils import df_to_input
+
+SEED = 42
 
 
 def build_parser() -> argparse.ArgumentParser:
@@ -53,9 +56,23 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument(
         "--output",
         type=Path,
-        default=Path("./src/models/mlp.keras"),
+        default=Path("./models/mlp.keras"),
         metavar="MODEL_PATH",
         help="Where to save trained model",
+    )
+
+    parser.add_argument(
+        "--test_size",
+        type=float,
+        default=0.15,
+        help="Fraction of data for the test set (default: 0.15)",
+    )
+
+    parser.add_argument(
+        "--val_size",
+        type=float,
+        default=0.15,
+        help="Fraction of data for the validation set (default: 0.15)",
     )
 
     return parser
@@ -69,23 +86,33 @@ def main():
     mlp = model(pts)
 
     data_df = prepare_trail_data(str(args.input))
+    labels = data_df["difficulty"].values
     y = pd.get_dummies(data_df["difficulty"], drop_first=True, dtype="int").to_numpy()
+    X = df_to_input(data_df, pts)
 
-    mat = df_to_input(data_df, pts)
-    print(mat.shape)
-    ele_mat = mat[:, :, 2]
-    print(ele_mat.shape)
+    # Split into train / val / test with stratification
+    X_trainval, X_test, y_trainval, y_test, lbl_trainval, _ = train_test_split(
+        X, y, labels, test_size=args.test_size, random_state=SEED, stratify=labels
+    )
+    val_frac = args.val_size / (1.0 - args.test_size)
+    X_train, X_val, y_train, y_val = train_test_split(
+        X_trainval, y_trainval, test_size=val_frac, random_state=SEED, stratify=lbl_trainval
+    )
 
-    # train, test = split_dataset(ele_mat, right_size=0.2)
-    # print("Train:", len(train), "| Test:", len(test))
+    print(f"Train: {len(X_train)} | Val: {len(X_val)} | Test: {len(X_test)}")
 
     mlp.fit(
-        mat, y, epochs=args.epochs, batch_size=args.batch_size, validation_split=0.1
+        X_train, y_train,
+        epochs=args.epochs,
+        batch_size=args.batch_size,
+        validation_data=(X_val, y_val),
     )
-    mlp.save(args.output)
 
-    # validate w/ known data
-    # TODO hahahaha
+    test_loss, test_acc = mlp.evaluate(X_test, y_test)
+    print(f"\nTest loss: {test_loss:.4f}")
+    print(f"Test accuracy: {test_acc:.4f}")
+
+    mlp.save(args.output)
 
 
 if __name__ == "__main__":

@@ -1,6 +1,7 @@
 import os
-
 os.environ["KERAS_BACKEND"] = "torch"
+
+from keras import Model
 
 import numpy as np
 import argparse
@@ -21,7 +22,7 @@ keras.utils.set_random_seed(seed)
 
 
 def train_test_model(
-    model,
+    model: Model,
     data: tuple,
     epochs: int,
     output_path: Path = Path("trail_cnn_model.keras"),

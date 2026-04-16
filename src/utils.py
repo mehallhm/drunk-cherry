@@ -7,20 +7,13 @@ from sklearn.model_selection import train_test_split
 from sklearn.preprocessing import LabelEncoder
 from PIL import Image
 
+from trail_helpers import map_difficulty
+
 seed = 1337
 
 np.random.seed(seed)
 
 extra_feature_set = {"elevation_gain", "elevation_loss", "average_grade", "max_grade"}
-
-difficulty_mapping = {
-    "Easy": "Easy",
-    "Easy_Intermediate": "Easy",
-    "Intermediate": "Intermediate",
-    "Intermediate_Difficult": "Intermediate_Difficult",
-    "Difficult": "Difficult",
-    "Very_Difficult": "Difficult",
-}
 
 
 def parse_stem(stem: str) -> tuple[str, str]:
@@ -53,7 +46,7 @@ def get_dataset_info(path: Path) -> dict:
 
     for f in png_files:
         trail_id, difficulty = parse_stem(f.stem)
-        difficulty = combine_difficulties(difficulty)
+        difficulty = map_difficulty(difficulty)
         trail_ids.add(trail_id)
         class_counts[difficulty] = class_counts.get(difficulty, 0) + 1
 
@@ -72,11 +65,6 @@ def get_dataset_info(path: Path) -> dict:
         "max_class_count": max(class_counts.values()),
     }
 
-
-def combine_difficulties(difficulty: str) -> str:
-    if difficulty not in difficulty_mapping:
-        raise ValueError(f"Unknown difficulty label: '{difficulty}'")
-    return difficulty_mapping[difficulty]
 
 
 def import_data(
@@ -107,7 +95,7 @@ def import_data(
 
     images_by_class = {}
     for f in png_files:
-        difficulty = combine_difficulties(parse_difficulty(f.stem))
+        difficulty = map_difficulty(parse_difficulty(f.stem))
         images_by_class.setdefault(difficulty, []).append(f)
 
     if balance == "undersample":
@@ -137,7 +125,7 @@ def import_data(
         if i % 2500 == 0 or i == len(png_files):
             print(f"Extracted features from {i} / {len(png_files)} images")
         trail_id = parse_trail_id(f.stem)
-        difficulty = combine_difficulties(parse_difficulty(f.stem))
+        difficulty = map_difficulty(parse_difficulty(f.stem))
         try:
             with Image.open(f) as img:
                 if channels == 1:

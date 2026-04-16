@@ -15,11 +15,11 @@ KNOWN_DIFFICULTIES = [
 
 DIFFICULTY_MAP = {
     "Easy": "Easy",
-    "Easy/Intermediate": "Intermediate",
+    "Easy/Intermediate": "Easy",
     "Intermediate": "Intermediate",
-    "Intermediate/Difficult": "Difficult",
+    "Intermediate/Difficult": "Intermediate/Difficult",
     "Difficult": "Difficult",
-    "Very Difficult": "Very Difficult",
+    "Very Difficult": "Difficult",
 }
 
 
@@ -65,7 +65,7 @@ def clean_trails(df: pd.DataFrame) -> pd.DataFrame:
     :return:
     """
     # remove nans from difficulty column
-    df.dropna(subset=["difficulty"])
+    df = df.dropna(subset=["difficulty"])
     return df
 
 
@@ -79,6 +79,26 @@ def filter_known_difficulties(df: pd.DataFrame) -> pd.DataFrame:
     return df[df["difficulty"].isin(KNOWN_DIFFICULTIES)].reset_index(drop=True)
 
 
+def map_difficulty(difficulty: str) -> str:
+    """
+    Map a single difficulty label to its consolidated class.
+
+    Handles CSV format ("Easy/Intermediate", "Very Difficult") and
+    filename format ("Easy_Intermediate", "Very_Difficult") where
+    underscores replace both slashes and spaces.
+
+    :param difficulty: raw difficulty label
+    :return: consolidated difficulty class
+    """
+    if difficulty in DIFFICULTY_MAP:
+        return DIFFICULTY_MAP[difficulty]
+    for sep in ("/", " "):
+        normalized = difficulty.replace("_", sep)
+        if normalized in DIFFICULTY_MAP:
+            return DIFFICULTY_MAP[normalized]
+    raise ValueError(f"Unknown difficulty label: '{difficulty}'")
+
+
 def consolidate_difficulties(df: pd.DataFrame) -> pd.DataFrame:
     """
     Map 6 difficulty classes down to 4
@@ -87,7 +107,7 @@ def consolidate_difficulties(df: pd.DataFrame) -> pd.DataFrame:
     :return: df with configured difficulty classes
     """
     df = df.copy()
-    df["difficulty"] = df["difficulty"].map(DIFFICULTY_MAP)
+    df["difficulty"] = df["difficulty"].map(map_difficulty)
     return df
 
 

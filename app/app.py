@@ -20,17 +20,18 @@ LINE_WIDTH = 4
 DOT_RADIUS = 3
 
 MODEL_PATH = Path(__file__).resolve().parent / "model" / "trail_cnn_model.keras"
+EXAMPLES_DIR = Path(__file__).resolve().parent / "gpx_examples"
 
 # The LabelEncoder in training sorts classes alphabetically.
-# From utils.difficulty_mapping the 4 consolidated classes are:
-CLASS_LABELS = ["Difficult", "Easy", "Intermediate", "Intermediate_Difficult"]
+# From trail_helpers.DIFFICULTY_MAP the 4 consolidated classes are:
+CLASS_LABELS = ["Difficult", "Easy", "Intermediate", "Intermediate/Difficult"]
 
 # Friendly display names
 DISPLAY_LABELS = {
     "Difficult": "Difficult",
     "Easy": "Easy",
     "Intermediate": "Intermediate",
-    "Intermediate_Difficult": "Intermediate / Difficult",
+    "Intermediate/Difficult": "Intermediate / Difficult",
 }
 
 
@@ -241,18 +242,35 @@ def predict(model: keras.Model, image: Image.Image, features: np.ndarray) -> tup
 # Streamlit UI
 # ---------------------------------------------------------------------------
 def main():
-    st.set_page_config(page_title="Trail Difficulty Predictor", layout="centered")
+    st.set_page_config(page_title="Trail Difficulty Predictor", layout="wide")
     st.title("Trail Difficulty Predictor")
     st.write("Upload a GPX file to visualize the trail and predict its difficulty.")
 
-    uploaded = st.file_uploader("Upload a GPX file", type=["gpx"])
+    # ---- discover bundled example GPX files ----
+    examples: dict[str, Path] = {}
+    if EXAMPLES_DIR.is_dir():
+        for f in sorted(EXAMPLES_DIR.iterdir()):
+            if f.suffix.lower() == ".gpx":
+                examples[f.stem] = f
 
-    if uploaded is None:
-        st.info("Waiting for a GPX file...")
+    # ---- input selection ----
+    option_names = ["Upload my own file"] + list(examples.keys())
+    choice = st.selectbox("Choose a trail", option_names)
+
+    raw: bytes | None = None
+
+    if choice == "Upload my own file":
+        uploaded = st.file_uploader("Upload a GPX file", type=["gpx"])
+        if uploaded is not None:
+            raw = uploaded.read()
+    else:
+        raw = examples[choice].read_bytes()
+
+    if raw is None:
+        st.info("Select an example trail or upload your own GPX file.")
         return
 
     try:
-        raw = uploaded.read()
         df = parse_gpx(raw)
     except Exception as exc:
         st.error(f"Failed to parse GPX file: {exc}")
@@ -260,38 +278,43 @@ def main():
 
     st.success(f"Parsed {len(df)} GPS points.")
 
-    # ---- generate image ----
+    # ---- compute everything up front ----
     image = generate_image(df)
-    st.subheader("Trail Visualization")
-    st.image(image, caption="Elevation heatmap (grayscale)", width=400)
-
-    # ---- compute features ----
     features = compute_extra_features(df)
-    with st.expander("Computed trail features"):
-        st.write(f"**Elevation gain:** {features[0]:.1f} m")
-        st.write(f"**Elevation loss:** {features[1]:.1f} m")
-        st.write(f"**Average grade:** {features[2]:.2f}%")
-        st.write(f"**Max grade:** {features[3]:.2f}%")
 
-    # ---- prediction ----
-    if not MODEL_PATH.exists():
-        st.warning(
-            f"Model not found at `{MODEL_PATH}`. "
-            "Copy `src/models/trail_cnn_model.keras` into `app/model/`."
+    # ---- two-column layout ----
+    col_left, col_right = st.columns(2)
+
+    with col_left:
+        st.subheader("Trail Visualization")
+        st.image(image, caption="Elevation heatmap (grayscale)", width="stretch")
+
+    with col_right:
+        # ---- prediction ----
+        if not MODEL_PATH.exists():
+            st.warning(
+                f"Model not found at `{MODEL_PATH}`. "
+                "Copy `src/models/trail_cnn_model.keras` into `app/model/`."
+            )
+            return
+
+        model = load_model()
+        label, probs = predict(model, image, features)
+
+        st.subheader("Predicted Difficulty")
+        st.markdown(f"### {DISPLAY_LABELS[label]}")
+
+        st.subheader("Class Probabilities")
+        prob_df = pd.DataFrame(
+            {"Difficulty": [DISPLAY_LABELS[c] for c in CLASS_LABELS], "Probability": probs}
         )
-        return
+        st.bar_chart(prob_df.set_index("Difficulty"))
 
-    model = load_model()
-    label, probs = predict(model, image, features)
-
-    st.subheader("Predicted Difficulty")
-    st.markdown(f"### {DISPLAY_LABELS[label]}")
-
-    st.subheader("Class Probabilities")
-    prob_df = pd.DataFrame(
-        {"Difficulty": [DISPLAY_LABELS[c] for c in CLASS_LABELS], "Probability": probs}
-    )
-    st.bar_chart(prob_df.set_index("Difficulty"))
+        st.subheader("Trail Stats")
+        st.metric("Elevation Gain", f"{features[0]:.1f} m")
+        st.metric("Elevation Loss", f"{features[1]:.1f} m")
+        st.metric("Average Grade", f"{features[2]:.2f}%")
+        st.metric("Max Grade", f"{features[3]:.2f}%")
 
 
 if __name__ == "__main__":

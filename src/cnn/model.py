@@ -11,6 +11,7 @@ from keras.layers import (
 )
 
 
+# multi class classification
 def create_model(
     img_size: tuple[int, int, int], num_classes: int, num_extra_features: int
 ) -> Model:

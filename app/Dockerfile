@@ -5,12 +5,13 @@ COPY --from=ghcr.io/astral-sh/uv:latest /uv /uvx /bin/
 WORKDIR /app
 
 # Install dependencies first (layer caching)
-COPY pyproject.toml .
-RUN uv sync --no-dev --no-install-project
+COPY pyproject.toml uv.lock ./
+RUN uv sync --frozen --no-dev --no-install-project
 
 # Copy application code and model
 COPY app.py .
 COPY model/ model/
+COPY gpx_examples/ gpx_examples/
 
 EXPOSE 8501
 
