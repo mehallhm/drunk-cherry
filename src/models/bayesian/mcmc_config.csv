@@ -6,4 +6,4 @@
 "proposal_sd",0.05
 "sigma_prior",3
 "n_samples_kept",6150
-"acceptance_rate",0.00298266666666667
+"acceptance_rate",0.00290933333333333

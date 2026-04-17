@@ -10,7 +10,7 @@ set.seed(1337)
 
 DATA_PATH <- "../../all_trails.csv"
 MODEL_OUT_DIR <- "../models/bayesian/"
-PLOT_DIR <- "./bayesian/plots/"
+PLOT_DIR <- "./plots/"
 
 FEATURE_COLS <- c("elevation_gain", "elevation_loss", "average_grade", "max_grade")
 CLASS_LEVELS <- c("Easy", "Intermediate", "Intermediate/Difficult", "Difficult")
@@ -234,7 +234,7 @@ plot_mcmc <- function(post_chain, sample_idx) {
     par(mfrow = c(class_count - 1, 1))
 
     for (class_idx in seq_len(class_count - 1)) {
-      chain <- post_chain[, feature_count, class_idx]
+      chain <- post_chain[, feature_idx, class_idx]
       plot(chain, type = "l",
            col = CLASS_COLORS[class_idx],
            main = sprintf("Chain — %s | Class: %s", feat_label, CLASS_LEVELS[class_idx]),
@@ -243,12 +243,12 @@ plot_mcmc <- function(post_chain, sample_idx) {
     dev.off()
 
     # follows the same pattern as sampling_mcmc_drg.R from class; full chain then thinned.
-    png(file.path(PLOT_DIR, sprintf("acf%s.png", file_label)),
+    png(file.path(PLOT_DIR, sprintf("acf_%s.png", file_label)),
         width = 800, height = 300 * (class_count - 1) * 2)
     par(mfrow = c((class_count - 1) * 2, 1), mar = c(4, 4, 3, 1))
 
     for (class_idx in seq_len(class_count - 1)) {
-      chain <- post_chain[, feature_count, class_idx]
+      chain <- post_chain[, feature_idx, class_idx]
       thinned_chain <- chain[seq(1, length(chain), by = THIN)]
 
       # full chain ACF
@@ -274,19 +274,19 @@ plot_priors <- function(post_chain, sample_idx) {
   feature_count <- dim(post_chain)[2]
 
   for (feature_idx in seq_len(feature_count)) {
-    feat_label <- FEAT_NAMES[feature_count]
+    feat_label <- FEAT_NAMES[feature_idx]
     file_label <- str_replace(feat_label, "/", "_")
 
     dens_data <- data.frame(
       value = as.vector(
-        sapply(seq_len(class_count - 1), function(class_idx) post_chain[, feature_count, class_idx])
+        sapply(seq_len(class_count - 1), function(class_idx) post_chain[, feature_idx, class_idx])
       ),
       class = factor(rep(CLASS_LEVELS[seq_len(class_count - 1)], each = sample_idx),
                      levels = CLASS_LEVELS[seq_len(class_count - 1)])
     )
 
     ci_df <- do.call(rbind, lapply(seq_len(class_count - 1), function(class_idx) {
-      weight_samples <- post_chain[, feature_count, class_idx]
+      weight_samples <- post_chain[, feature_idx, class_idx]
       data.frame(
         class = factor(CLASS_LEVELS[class_idx], levels = CLASS_LEVELS[seq_len(class_count - 1)]),
         mean = mean(weight_samples),
@@ -315,10 +315,10 @@ plot_priors <- function(post_chain, sample_idx) {
            p_dens, width = 7, height = 6, dpi = 150)
   }
 
-  coef_rows <- lapply(seq_len(feature_count), function(feature_count) {
+  coef_rows <- lapply(seq_len(feature_count), function(feature_idx) {
     lapply(seq_len(class_count - 1), function(class_idx) {
-      weight_samples <- post_chain[, feature_count, class_idx]
-      data.frame(feature = FEAT_NAMES[feature_count],
+      weight_samples <- post_chain[, feature_idx, class_idx]
+      data.frame(feature = FEAT_NAMES[feature_idx],
                  class = CLASS_LEVELS[class_idx],
                  mean = mean(weight_samples),
                  lo = quantile(weight_samples, 0.025),
