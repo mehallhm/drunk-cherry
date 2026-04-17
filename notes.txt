@@ -1,5 +1,0 @@
-add another set of node to the model with grade information after convolution: [max grade, egain, eloss]
-don't min max scale globally for elevation on images
-- grayscale processing
-create second line drawing algo for the elevation (maybe)
-color of line is differences in elevation
