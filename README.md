@@ -1,10 +1,30 @@
 # [DS4420 Michael Mehall & Paolo Lanaro ML2 Final Project](https://github.com/mehallhm/drunk-cherry)
-- Final project for Data Mining and Machine Learning 2 w/ Dr. Gerber
+> Machine Learning project leveraging CNNs and Bayesian multi-class classification to classify difficulty of bike trails
 
-## Plan
-- We plan on creating the following 2 models to predict the difficulty / rating of a trail for our final project:
-    1. Python (package based) CNN model that takes in an image created from our features, whether that image be 2D or 3D
-    2. R (hand rolled) Bayesian classification model using our features
+In this project we've worked on building two machine learning models for classifying difficulties of bike trails.
+The first model is a convolutional neural network that takes in visualized bike trail GPS data and predicts whether that trail falls into one of four categories: [Easy, Intermediate, Intermediate Difficult, Difficult]
 
-## Notes
-- You'll need to unzip the `all_trails.zip` file to use the `all_trails.csv` file in this project. We don't directly include the `.csv` in this project because of how large our data set is
+Our second model uses Bayesian multi-class classification with the following four trail id constant features to make predictions: [`elevation_loss`, `elevation_gain`, `average_grade`, `max_grade`]
+
+![Bayesian ML Confusion Matrix](./src/bayesian/confusion_matrix.png)
+
+## Findings
+[Spreadsheet with grid search findings (accessible via Husky google account)](https://docs.google.com/spreadsheets/d/1wKCymOrajJVm5JHa0_zLh-FwxfEtSBBgnNC8hz6487o/edit?usp=sharing)
+
+## Usage Examples
+- You'll need to unzip the `all_trails.zip` file to use the `all_trails.csv` file in this project. We don't directly include the `.csv` in this project because the dataset is large
+
+### CNN Usage (Python):
+1. Please remember to `pip install -r requirements.txt` before trying any of the following commands
+2. Within this repository there should be a pretrained model at `./src/models/cnn/best_model.keras`. This can be [loaded](https://www.tensorflow.org/tutorials/keras/save_and_load#new_high-level_keras_format) with `keras.model.load_model("./src/models/cnn/best_model.keras")`
+3. You can use this model in the classifier by running the python file `PLACEHOLDER.py` with the `--model <PATH_TO_THE_MODEL>` argument
+
+Note: If you'd like to train a new model using our framework you have to first generate images from the csv using the script located at `./src/scripts/image_gen.py`
+1. You'll be able to pass in a couple parameters to vary the output of the trail to image generation so make sure you read the purpose of those parameters
+2. To train the CNN model on the images you've created in the step above, first change directory to the `./src` directory and then run the following command:
+    - `python -m cnn.train --input <generated_image_directory> --epochs <num_epochs> --output <./models/foo.keras> --csv_path <../all_trails.csv> --color <rgb or gray> --balance undersample`
+3. This should train the model over the number of epochs specified, saving checkpointed best models during training
+
+### Bayesian Model Usage (R):
+1. To run the training for the model, run the R program and tune the hyperparameters at the top of the file as needed.
+2. Extract weights from the `./src/models/bayesian/` directory.
